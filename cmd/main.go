@@ -38,19 +38,19 @@ import (
 )
 
 type CmdRunner struct {
-	messageHandler     *handlers.MessageHandler
-	messageSender      *handlers.MessageSender
-	connectionState    *handlers.ConnectionState
-	gitUseCase         *usecases.GitUseCase
-	appState           *models.AppState
-	rotatingWriter     *log.RotatingWriter
-	envManager         *env.EnvManager
-	agentID            string
-	agentsApiClient    *clients.AgentsApiClient
-	wsURL              string
-	eksecAPIKey      string
-	dirLock            *utils.DirLock
-	repoLock           *utils.DirLock
+	messageHandler  *handlers.MessageHandler
+	messageSender   *handlers.MessageSender
+	connectionState *handlers.ConnectionState
+	gitUseCase      *usecases.GitUseCase
+	appState        *models.AppState
+	rotatingWriter  *log.RotatingWriter
+	envManager      *env.EnvManager
+	agentID         string
+	agentsApiClient *clients.AgentsApiClient
+	wsURL           string
+	eksecAPIKey     string
+	dirLock         *utils.DirLock
+	repoLock        *utils.DirLock
 
 	// Persistent worker pools reused across reconnects
 	blockingWorkerPool *workerpool.WorkerPool
@@ -78,8 +78,8 @@ func validateModelForAgent(agentType, model string) error {
 	case "cursor":
 		// Validate Cursor models
 		validCursorModels := map[string]bool{
-			"gpt-5":            true,
-			"sonnet-4":         true,
+			"gpt-5":             true,
+			"sonnet-4":          true,
 			"sonnet-4-thinking": true,
 		}
 		if !validCursorModels[model] {
@@ -482,16 +482,16 @@ func NewCmdRunner(agentType, permissionMode, model, repoPath string) (*CmdRunner
 
 	// Create the CmdRunner instance
 	cr := &CmdRunner{
-		messageHandler:   messageHandler,
-		messageSender:    messageSender,
-		connectionState:  connectionState,
-		gitUseCase:       gitUseCase,
-		appState:         appState,
-		envManager:       envManager,
-		agentID:          agentID,
-		agentsApiClient:  agentsApiClient,
-		wsURL:            wsURL,
-		eksecAPIKey:    eksecAPIKey,
+		messageHandler:  messageHandler,
+		messageSender:   messageSender,
+		connectionState: connectionState,
+		gitUseCase:      gitUseCase,
+		appState:        appState,
+		envManager:      envManager,
+		agentID:         agentID,
+		agentsApiClient: agentsApiClient,
+		wsURL:           wsURL,
+		eksecAPIKey:     eksecAPIKey,
 	}
 
 	// Initialize dual worker pools that persist for the app lifetime
@@ -520,6 +520,7 @@ func NewCmdRunner(agentType, permissionMode, model, repoPath string) (*CmdRunner
 
 	// Initialize worktree pool if concurrency enabled and in repo mode
 	// Note: repoContext is already set above, we just refresh it here
+	var worktreePool *usecases.WorktreePool
 	repoContext = appState.GetRepositoryContext()
 	if gitUseCase.ShouldUseWorktrees() && repoContext.IsRepoMode {
 		// Get pool size from environment, default to MAX_CONCURRENCY
@@ -535,7 +536,7 @@ func NewCmdRunner(agentType, permissionMode, model, repoPath string) (*CmdRunner
 			return nil, fmt.Errorf("failed to get worktree base path: %w", err)
 		}
 
-		worktreePool := usecases.NewWorktreePool(
+		worktreePool = usecases.NewWorktreePool(
 			gitUseCase.GetGitClient(),
 			worktreeBasePath,
 			poolSize,
@@ -566,6 +567,14 @@ func NewCmdRunner(agentType, permissionMode, model, repoPath string) (*CmdRunner
 	envManager.RegisterReloadHook(gitUseCase.GithubTokenUpdateHook)
 	log.Info("📎 Registered GitHub token update hook")
 
+	// Wait for the worktree pool initial fill to complete before recovering jobs.
+	// This prevents a race condition where the pool's resetMainRepoToDefaultBranch()
+	// (git reset --hard) runs concurrently with job recovery's SwitchToJobBranch()
+	// (also git reset --hard), both competing for .git/index.lock on the same repo.
+	if worktreePool != nil {
+		worktreePool.WaitForInitialFill()
+	}
+
 	// Recover in-progress jobs and queued messages on program startup (NOT on Socket.io reconnect)
 	// This enables crash recovery - we only want to recover jobs once when the program starts
 	handlers.RecoverJobs(
@@ -592,7 +601,7 @@ func createCLIAgent(
 			model = "gpt-5"
 		case "opencode":
 			model = "opencode/grok-code"
-		// cursor and claude don't need defaults (cursor and claude use empty string for their defaults)
+			// cursor and claude don't need defaults (cursor and claude use empty string for their defaults)
 		}
 	}
 

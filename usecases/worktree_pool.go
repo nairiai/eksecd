@@ -25,9 +25,9 @@ var ErrPoolStopping = errors.New("pool is stopping")
 
 // PooledWorktree represents a pre-created worktree ready for use
 type PooledWorktree struct {
-	Path       string    // e.g., ~/.eksec_worktrees/pool-{uuid}
-	BranchName string    // e.g., eksecd/pool-ready-{uuid}
-	BaseCommit string    // Commit hash when created (for staleness check)
+	Path       string // e.g., ~/.eksec_worktrees/pool-{uuid}
+	BranchName string // e.g., eksecd/pool-ready-{uuid}
+	BaseCommit string // Commit hash when created (for staleness check)
 	CreatedAt  time.Time
 }
 
@@ -35,14 +35,15 @@ type PooledWorktree struct {
 // Pre-creating worktrees eliminates the 10-30+ second delay when starting jobs
 // on large repositories (1GB+), providing instant worktree assignment.
 type WorktreePool struct {
-	ready         []PooledWorktree
-	mutex         sync.Mutex
-	gitClient     *clients.GitClient
-	basePath      string        // ~/.eksec_worktrees/
-	targetSize    int           // from WORKTREE_POOL_SIZE env
-	replenishChan chan struct{} // signals replenisher
-	stopChan      chan struct{} // for shutdown
-	wg            sync.WaitGroup
+	ready           []PooledWorktree
+	mutex           sync.Mutex
+	gitClient       *clients.GitClient
+	basePath        string        // ~/.eksec_worktrees/
+	targetSize      int           // from WORKTREE_POOL_SIZE env
+	replenishChan   chan struct{} // signals replenisher
+	stopChan        chan struct{} // for shutdown
+	wg              sync.WaitGroup
+	initialFillDone chan struct{} // closed when the initial fill completes
 }
 
 // NewWorktreePool creates a new worktree pool.
@@ -51,12 +52,13 @@ type WorktreePool struct {
 // targetSize: the target number of worktrees to maintain in the pool
 func NewWorktreePool(gitClient *clients.GitClient, basePath string, targetSize int) *WorktreePool {
 	return &WorktreePool{
-		ready:         make([]PooledWorktree, 0, targetSize),
-		gitClient:     gitClient,
-		basePath:      basePath,
-		targetSize:    targetSize,
-		replenishChan: make(chan struct{}, 1), // buffered to allow non-blocking sends
-		stopChan:      make(chan struct{}),
+		ready:           make([]PooledWorktree, 0, targetSize),
+		gitClient:       gitClient,
+		basePath:        basePath,
+		targetSize:      targetSize,
+		replenishChan:   make(chan struct{}, 1), // buffered to allow non-blocking sends
+		stopChan:        make(chan struct{}),
+		initialFillDone: make(chan struct{}),
 	}
 }
 
@@ -66,6 +68,13 @@ func NewWorktreePool(gitClient *clients.GitClient, basePath string, targetSize i
 func (p *WorktreePool) Start(ctx context.Context) {
 	p.wg.Add(1)
 	go p.replenisherLoop(ctx)
+}
+
+// WaitForInitialFill blocks until the initial pool fill is complete.
+// This should be called before any operations that perform git commands on the
+// main repository (e.g., job recovery) to prevent concurrent git index.lock conflicts.
+func (p *WorktreePool) WaitForInitialFill() {
+	<-p.initialFillDone
 }
 
 // Stop gracefully shuts down the pool and waits for the background goroutine to finish.
