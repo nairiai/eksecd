@@ -1,3 +1,13 @@
+## [v0.0.69] - 2026-02-09
+
+### Bugfixes
+
+- Fix startup deadlock: close initialFillDone channel after worktree pool fill ([#153](https://github.com/eksecai/eksecd/pull/153))
+  - The WaitForInitialFill() channel was never signaled, causing the main thread to block indefinitely
+  - Prevented WebSocket connection, job recovery, and all post-startup initialization
+- Fix flaky TestMultipleJobsProcessInParallel test ([#153](https://github.com/eksecai/eksecd/pull/153))
+  - Race condition where cleanup could close channel before test sent final messages
+
 ## [v0.0.68] - 2026-02-09
 
 ### Bugfixes
