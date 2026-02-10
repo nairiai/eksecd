@@ -210,3 +210,9 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## Support
 
 Contact us at support@eksec.ai
+
+---
+
+*Sails catch the salt wind,*
+*Gold glints beneath the dark waves—*
+*Pirates chart their course.*
