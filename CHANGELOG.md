@@ -1,3 +1,11 @@
+## [v0.0.75] - 2026-02-10
+
+### Bugfixes
+
+- Fix rate limit retry in worktree operations and reduce redundant GitHub API calls
+  - Add rate limit backoff extension (10min) to `executeWithRetryInDir`, matching `executeWithRetry` behavior. Previously worktree PR operations only retried for 2 minutes on rate limit errors.
+  - Skip redundant `HasExistingPR` and `GetCurrentBranch` API calls in PR footer validation when the caller already knows a PR exists. Saves 2-3 GitHub API calls per job.
+
 ## [v0.0.74] - 2026-02-10
 
 ### Bugfixes
