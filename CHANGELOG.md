@@ -1,3 +1,9 @@
+## [v0.0.72] - 2026-02-10
+
+### Bugfixes
+
+- Fix PR footer detection to prevent duplicate footers ([#160](https://github.com/eksecai/eksecd/pull/160))
+
 ## [v0.0.71] - 2026-02-10
 
 ### Bugfixes
