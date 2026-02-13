@@ -1,3 +1,10 @@
+## [v0.0.77] - 2026-02-13
+
+### Bugfixes
+
+- Fix git pull failing on divergent branches ([#163](https://github.com/eksecai/eksecd/pull/163))
+  - Add `--rebase` flag to `git pull` in both `PullLatest()` and `PullLatestInWorktree()` to handle divergent branches gracefully instead of failing with exit status 128.
+
 ## [v0.0.76] - 2026-02-10
 
 ### Bugfixes
