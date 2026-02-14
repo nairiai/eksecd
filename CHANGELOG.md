@@ -1,3 +1,11 @@
+## [v0.0.79] - 2026-02-14
+
+### Bugfixes
+
+- Fix MCP proxy unreachable through secret proxy ([#166](https://github.com/eksecai/eksecd/pull/166))
+  - Add `NO_PROXY`/`no_proxy` with MCP proxy hostname to agent process environment so MCP traffic bypasses the secret proxy and connects directly.
+  - The secret proxy cannot resolve `mcp-proxy.internal` (only in eksecd container's `/etc/hosts`), causing 502 errors when MCP requests were routed through it.
+
 ## [v0.0.78] - 2026-02-14
 
 ### Features
