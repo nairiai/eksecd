@@ -4,6 +4,7 @@ package clients
 import (
 	"context"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -151,6 +152,8 @@ func UpdateHomeForUser(env []string, username string) []string {
 // InjectProxyEnv adds HTTP_PROXY and HTTPS_PROXY to the environment if AGENT_HTTP_PROXY is set.
 // This ensures agent processes route their traffic through the secret proxy while the
 // eksecd process itself does not use the proxy (allowing it to reach the backend).
+// When AGENT_MCP_PROXY is also set, it adds the MCP proxy hostname to NO_PROXY so that
+// agent processes can reach the MCP proxy directly without going through the secret proxy.
 func InjectProxyEnv(env []string) []string {
 	proxyURL := AgentHTTPProxy()
 	if proxyURL == "" {
@@ -160,12 +163,16 @@ func InjectProxyEnv(env []string) []string {
 	// Check if HTTP_PROXY or HTTPS_PROXY already exist in env
 	hasHTTPProxy := false
 	hasHTTPSProxy := false
+	hasNoProxy := false
 	for _, e := range env {
 		if strings.HasPrefix(e, "HTTP_PROXY=") || strings.HasPrefix(e, "http_proxy=") {
 			hasHTTPProxy = true
 		}
 		if strings.HasPrefix(e, "HTTPS_PROXY=") || strings.HasPrefix(e, "https_proxy=") {
 			hasHTTPSProxy = true
+		}
+		if strings.HasPrefix(e, "NO_PROXY=") || strings.HasPrefix(e, "no_proxy=") {
+			hasNoProxy = true
 		}
 	}
 
@@ -179,5 +186,29 @@ func InjectProxyEnv(env []string) []string {
 		env = append(env, "https_proxy="+proxyURL) // Some tools use lowercase
 	}
 
+	// When MCP proxy is configured, add its hostname to NO_PROXY so agent processes
+	// bypass the HTTP proxy for MCP connections. The secret proxy runs in a separate
+	// container and cannot resolve the MCP proxy's internal hostname (mcp-proxy.internal),
+	// causing 502 errors if MCP traffic is routed through it.
+	if !hasNoProxy {
+		mcpProxyURL := AgentMCPProxy()
+		if mcpProxyURL != "" {
+			mcpHost := extractHost(mcpProxyURL)
+			if mcpHost != "" {
+				env = append(env, "NO_PROXY="+mcpHost)
+				env = append(env, "no_proxy="+mcpHost)
+			}
+		}
+	}
+
 	return env
+}
+
+// extractHost extracts the hostname (without port) from a URL string.
+func extractHost(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return parsed.Hostname()
 }
