@@ -1620,7 +1620,7 @@ func TestFetchMCPProxyServers_Success(t *testing.T) {
 			t.Errorf("Expected path /servers, got %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(servers)
+		_ = json.NewEncoder(w).Encode(servers)
 	}))
 	defer ts.Close()
 
@@ -1645,7 +1645,7 @@ func TestFetchMCPProxyServers_Success(t *testing.T) {
 func TestFetchMCPProxyServers_ServerError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("internal error"))
+		_, _ = w.Write([]byte("internal error"))
 	}))
 	defer ts.Close()
 
@@ -1658,7 +1658,7 @@ func TestFetchMCPProxyServers_ServerError(t *testing.T) {
 func TestFetchMCPProxyServers_EmptyList(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("[]"))
+		_, _ = w.Write([]byte("[]"))
 	}))
 	defer ts.Close()
 
@@ -1682,7 +1682,7 @@ func TestClaudeCodeProxiedMCPProcessor_Success(t *testing.T) {
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(servers)
+		_ = json.NewEncoder(w).Encode(servers)
 	}))
 	defer ts.Close()
 
@@ -1727,7 +1727,7 @@ func TestClaudeCodeProxiedMCPProcessor_Success(t *testing.T) {
 func TestClaudeCodeProxiedMCPProcessor_EmptyServers(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("[]"))
+		_, _ = w.Write([]byte("[]"))
 	}))
 	defer ts.Close()
 
@@ -1753,7 +1753,7 @@ func TestOpenCodeProxiedMCPProcessor_Success(t *testing.T) {
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(servers)
+		_ = json.NewEncoder(w).Encode(servers)
 	}))
 	defer ts.Close()
 
@@ -1802,7 +1802,7 @@ func TestOpenCodeProxiedMCPProcessor_Success(t *testing.T) {
 func TestOpenCodeProxiedMCPProcessor_EmptyServers(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("[]"))
+		_, _ = w.Write([]byte("[]"))
 	}))
 	defer ts.Close()
 
