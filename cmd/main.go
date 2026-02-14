@@ -143,8 +143,14 @@ func fetchAndStoreArtifacts(agentsApiClient *clients.AgentsApiClient) error {
 		return fmt.Errorf("failed to clean eksecd rules directory: %w", err)
 	}
 
-	if err := utils.CleanCcagentMCPDir(); err != nil {
-		return fmt.Errorf("failed to clean eksecd MCP directory: %w", err)
+	// Skip MCP config cleanup and download when MCP proxy is enabled
+	// (configs will be fetched from the proxy at processing time)
+	if clients.AgentMCPProxy() == "" {
+		if err := utils.CleanCcagentMCPDir(); err != nil {
+			return fmt.Errorf("failed to clean eksecd MCP directory: %w", err)
+		}
+	} else {
+		log.Info("📦 MCP proxy enabled, skipping MCP config artifact downloads")
 	}
 
 	if err := utils.CleanCcagentSkillsDir(); err != nil {
@@ -218,16 +224,32 @@ func processMCPConfigs(agentType, workDir, targetHomeDir string) error {
 
 	var processor utils.MCPProcessor
 
-	switch agentType {
-	case "claude":
-		processor = utils.NewClaudeCodeMCPProcessor(workDir)
-	case "opencode":
-		processor = utils.NewOpenCodeMCPProcessor(workDir)
-	case "cursor", "codex":
-		// Cursor and Codex don't support MCP configs yet
-		processor = utils.NewNoOpMCPProcessor()
-	default:
-		return fmt.Errorf("unknown agent type: %s", agentType)
+	// Check if MCP proxy mode is enabled
+	mcpProxyURL := clients.AgentMCPProxy()
+	if mcpProxyURL != "" {
+		log.Info("🔌 MCP proxy mode enabled: %s", mcpProxyURL)
+		switch agentType {
+		case "claude":
+			processor = utils.NewClaudeCodeProxiedMCPProcessor(mcpProxyURL)
+		case "opencode":
+			processor = utils.NewOpenCodeProxiedMCPProcessor(mcpProxyURL)
+		case "cursor", "codex":
+			processor = utils.NewNoOpMCPProcessor()
+		default:
+			return fmt.Errorf("unknown agent type: %s", agentType)
+		}
+	} else {
+		switch agentType {
+		case "claude":
+			processor = utils.NewClaudeCodeMCPProcessor(workDir)
+		case "opencode":
+			processor = utils.NewOpenCodeMCPProcessor(workDir)
+		case "cursor", "codex":
+			// Cursor and Codex don't support MCP configs yet
+			processor = utils.NewNoOpMCPProcessor()
+		default:
+			return fmt.Errorf("unknown agent type: %s", agentType)
+		}
 	}
 
 	if err := processor.ProcessMCPConfigs(targetHomeDir); err != nil {
