@@ -448,6 +448,89 @@ func TestBuildAgentCommandWithContextAndWorkDir_Managed(t *testing.T) {
 	}
 }
 
+func TestInjectProxyEnv_WithMCPProxy(t *testing.T) {
+	// Save original values
+	origHTTPProxy := os.Getenv("AGENT_HTTP_PROXY")
+	origMCPProxy := os.Getenv("AGENT_MCP_PROXY")
+	defer func() {
+		os.Setenv("AGENT_HTTP_PROXY", origHTTPProxy)
+		os.Setenv("AGENT_MCP_PROXY", origMCPProxy)
+	}()
+
+	os.Setenv("AGENT_HTTP_PROXY", "http://proxy:8080")
+	os.Setenv("AGENT_MCP_PROXY", "http://mcp-proxy.internal:8082")
+
+	env := []string{"PATH=/usr/bin", "HOME=/home/user"}
+	result := InjectProxyEnv(env)
+
+	// Should add HTTP_PROXY, http_proxy, HTTPS_PROXY, https_proxy, NO_PROXY, no_proxy
+	expectedLen := len(env) + 6
+	if len(result) != expectedLen {
+		t.Errorf("Expected %d vars, got %d: %v", expectedLen, len(result), result)
+	}
+
+	hasNoProxy := false
+	hasLowerNoProxy := false
+	for _, e := range result {
+		if e == "NO_PROXY=mcp-proxy.internal" {
+			hasNoProxy = true
+		}
+		if e == "no_proxy=mcp-proxy.internal" {
+			hasLowerNoProxy = true
+		}
+	}
+
+	if !hasNoProxy {
+		t.Error("NO_PROXY=mcp-proxy.internal not found in result")
+	}
+	if !hasLowerNoProxy {
+		t.Error("no_proxy=mcp-proxy.internal not found in result")
+	}
+}
+
+func TestInjectProxyEnv_NoMCPProxy(t *testing.T) {
+	// Save original values
+	origHTTPProxy := os.Getenv("AGENT_HTTP_PROXY")
+	origMCPProxy := os.Getenv("AGENT_MCP_PROXY")
+	defer func() {
+		os.Setenv("AGENT_HTTP_PROXY", origHTTPProxy)
+		os.Setenv("AGENT_MCP_PROXY", origMCPProxy)
+	}()
+
+	os.Setenv("AGENT_HTTP_PROXY", "http://proxy:8080")
+	os.Unsetenv("AGENT_MCP_PROXY")
+
+	env := []string{"PATH=/usr/bin", "HOME=/home/user"}
+	result := InjectProxyEnv(env)
+
+	// Should NOT add NO_PROXY when AGENT_MCP_PROXY is not set
+	for _, e := range result {
+		if strings.HasPrefix(e, "NO_PROXY=") || strings.HasPrefix(e, "no_proxy=") {
+			t.Errorf("NO_PROXY should not be set when AGENT_MCP_PROXY is not configured, found: %s", e)
+		}
+	}
+}
+
+func TestExtractHost(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"http://mcp-proxy.internal:8082", "mcp-proxy.internal"},
+		{"http://127.0.0.1:8082", "127.0.0.1"},
+		{"http://localhost:8082/path", "localhost"},
+		{"", ""},
+		{"not-a-url", ""},
+	}
+
+	for _, tt := range tests {
+		result := extractHost(tt.input)
+		if result != tt.expected {
+			t.Errorf("extractHost(%q) = %q, want %q", tt.input, result, tt.expected)
+		}
+	}
+}
+
 func TestBuildAgentCommandWithContext_InjectsProxy(t *testing.T) {
 	// Save original values
 	origUser := os.Getenv("AGENT_EXEC_USER")
