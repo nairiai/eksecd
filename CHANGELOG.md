@@ -1,3 +1,10 @@
+## [v0.0.82] - 2026-02-15
+
+### Bugfixes
+
+- Fix env vars not applied in managed containers ([#169](https://github.com/eksecai/eksecd/pull/169))
+  - Remove `IsSelfHosted()` guard from `fetchAndApplyEnvVars` so environment variables configured via the platform are fetched and applied to all agents, not just self-hosted ones.
+
 ## [v0.0.81] - 2026-02-15
 
 ### Features
