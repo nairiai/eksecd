@@ -1,3 +1,12 @@
+## [v0.0.80] - 2026-02-15
+
+### Bugfixes
+
+- Fix divergent branches by resetting to origin ref ([#164](https://github.com/eksecai/eksecd/pull/164))
+  - Replace `git pull --rebase` with `git fetch` + `git reset --hard origin/<branch>` to handle divergent branches caused by force pushes or rebases, preventing exit status 128 errors.
+- Fix opencode text messages joined without newlines ([#167](https://github.com/eksecai/eksecd/pull/167))
+  - Insert newline separators between consecutive text messages in OpenCode response parsing so multi-part responses don't get concatenated into a single unreadable block.
+
 ## [v0.0.79] - 2026-02-14
 
 ### Bugfixes
