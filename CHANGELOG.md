@@ -1,3 +1,14 @@
+## [v0.0.83] - 2026-02-18
+
+### Features
+
+- Add native Codex artifact provisioning support ([#171](https://github.com/eksecai/eksecd/pull/171))
+  - Implement `CodexRulesProcessor` that builds `~/.codex/AGENTS.md` from rule files
+  - Implement `CodexMCPProcessor` that writes `~/.codex/config.toml` in TOML format with `shell_environment_policy` set to never filter env vars
+  - Implement `CodexProxiedMCPProcessor` for proxy-mode MCP config for Codex
+  - Implement `CodexSkillsProcessor` that extracts skills to `~/.codex/skills/`
+  - Add `github.com/pelletier/go-toml/v2` dependency for TOML serialization
+
 ## [v0.0.82] - 2026-02-15
 
 ### Bugfixes
