@@ -1,3 +1,11 @@
+## [v0.0.84] - 2026-02-18
+
+### Bugfixes
+
+- Fix OpenCode parser failing on first-run database migration ([#172](https://github.com/eksecai/eksecd/pull/172))
+  - Handle case where OpenCode's sqlite database doesn't exist yet on first run, preventing parser initialization failures
+
+
 ## [v0.0.83] - 2026-02-18
 
 ### Features
