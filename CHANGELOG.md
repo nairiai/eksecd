@@ -1,3 +1,11 @@
+## [v0.0.86] - 2026-02-21
+
+### Reverts
+
+- Revert "Use remote MCP server URLs directly" ([#173](https://github.com/eksecai/eksecd/pull/173))
+  - Reverts direct remote URL passthrough for MCP servers using SSE transport
+  - MCP servers will again go through the HTTP POST proxy instead of connecting directly
+
 ## [v0.0.84] - 2026-02-18
 
 ### Bugfixes
