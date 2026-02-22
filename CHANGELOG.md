@@ -1,3 +1,13 @@
+## [v0.0.87] - 2026-02-22
+
+### Improvements
+
+- Improve PR title generation robustness ([#174](https://github.com/eksecai/eksecd/pull/174))
+  - Rewrite PR title generation and update prompts with explicit good/bad examples and strict output constraints
+  - Add `SanitizePRTitle()` post-processing function to strip markdown headers, bullets, quotes, preamble phrases, and leaked body content
+  - Apply sanitization in all four title generation paths (create/update, regular/worktree)
+  - Add comprehensive test coverage for title sanitization (21 test cases)
+
 ## [v0.0.86] - 2026-02-21
 
 ### Reverts
