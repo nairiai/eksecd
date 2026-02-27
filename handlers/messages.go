@@ -885,6 +885,14 @@ func (mh *MessageHandler) checkJobIdleness(jobID string, jobData models.JobData)
 			return fmt.Errorf("failed to remove job from app state: %w", err)
 		}
 		log.Info("🗑️ Removed completed job %s from app state", jobID)
+
+		// Evict the job from the dispatcher to close its message channel.
+		// Without this, processJobMessages() stays blocked on `for msg := range ch`
+		// holding a worker pool slot even though the job is done, preventing new jobs
+		// from being processed (zombie worker bug).
+		if mh.jobEvictor != nil {
+			mh.jobEvictor.EvictJob(jobID)
+		}
 	}
 
 	log.Info("📋 Completed successfully - checked idleness for job %s", jobID)

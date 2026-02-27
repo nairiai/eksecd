@@ -816,3 +816,64 @@ func TestDispatcher_EmptyProcessedMessageID(t *testing.T) {
 		t.Error("Empty ProcessedMessageID should not be stored in seenMessages")
 	}
 }
+
+func TestEvictJobFreesWorkerSlotForIdleJob(t *testing.T) {
+	// This test reproduces the zombie worker bug:
+	// A job finishes processing but its goroutine stays blocked on `for msg := range ch`,
+	// holding the worker pool slot. When the idle checker removes the job from AppState,
+	// the processor never notices because no new messages arrive. EvictJob closes the
+	// channel, which unblocks the range loop and frees the worker slot.
+	appState := createTestAppState(t)
+
+	jobID := "job-zombie"
+	err := appState.UpdateJobData(jobID, models.JobData{
+		JobID:  jobID,
+		Status: models.JobStatusInProgress,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create job: %v", err)
+	}
+
+	td := newTestableDispatcher(1, appState) // pool size 1 — single worker slot
+
+	ch := make(chan models.BaseMessage, 100)
+	td.mutex.Lock()
+	td.activeJobs[jobID] = ch
+	td.mutex.Unlock()
+
+	processorDone := make(chan struct{})
+
+	// Start processor — it will process the message then block on `range ch`
+	go func() {
+		td.processJobMessagesWithMock(jobID, ch)
+		close(processorDone)
+	}()
+
+	// Send one message, let it be processed
+	ch <- createTestMessage(models.MessageTypeUserMessage, jobID)
+	time.Sleep(50 * time.Millisecond)
+
+	// Simulate idle checker: remove from AppState (this alone does NOT unblock the processor)
+	err = appState.RemoveJob(jobID)
+	if err != nil {
+		t.Fatalf("Failed to remove job: %v", err)
+	}
+
+	// Without EvictJob, the processor is still blocked. Verify it hasn't exited.
+	select {
+	case <-processorDone:
+		t.Fatal("Processor exited without EvictJob — unexpected (range should still be blocking)")
+	case <-time.After(100 * time.Millisecond):
+		// Good — processor is still blocked as expected
+	}
+
+	// Now call EvictJob — this should close the channel and unblock the processor
+	td.EvictJob(jobID)
+
+	select {
+	case <-processorDone:
+		// Good — processor exited after EvictJob
+	case <-time.After(2 * time.Second):
+		t.Error("Processor did not exit after EvictJob — zombie worker bug still present")
+	}
+}
