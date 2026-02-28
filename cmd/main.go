@@ -56,6 +56,9 @@ type CmdRunner struct {
 	blockingWorkerPool *workerpool.WorkerPool
 	instantWorkerPool  *workerpool.WorkerPool
 
+	// Message poller for HTTP-based message polling
+	messagePoller *handlers.MessagePoller
+
 	// Job dispatcher for per-job message sequencing
 	dispatcher *handlers.JobDispatcher
 
@@ -541,7 +544,7 @@ func NewCmdRunner(agentType, permissionMode, model, repoPath string) (*CmdRunner
 
 	// Initialize ConnectionState and MessageSender
 	connectionState := handlers.NewConnectionState()
-	messageSender := handlers.NewMessageSender(connectionState)
+	messageSender := handlers.NewMessageSender()
 
 	gitUseCase := usecases.NewGitUseCase(gitClient, cliAgent, appState)
 
@@ -862,6 +865,12 @@ func main() {
 			log.Info("🏊 Worktree pool stopped")
 		}
 
+		// Stop message poller
+		if cmdRunner.messagePoller != nil {
+			cmdRunner.messagePoller.Stop()
+			log.Info("📡 MessagePoller stopped")
+		}
+
 		// Stop environment manager periodic refresh
 		if cmdRunner.envManager != nil {
 			cmdRunner.envManager.Stop()
@@ -976,8 +985,13 @@ func (cr *CmdRunner) startSocketIOClient(serverURLStr, apiKey string) error {
 	socketClient := manager.Socket("/", opts)
 
 	// Start MessageSender goroutine
-	go cr.messageSender.Run(socketClient)
+	go cr.messageSender.Run(cr.agentsApiClient)
 	log.Info("📤 Started MessageSender goroutine")
+
+	// Create and start MessagePoller for HTTP-based message polling
+	cr.messagePoller = handlers.NewMessagePoller(cr.agentsApiClient, cr.dispatcher, 30*time.Second)
+	go cr.messagePoller.Run()
+	log.Info("📡 Started MessagePoller goroutine")
 
 	// Use persistent worker pools across reconnects
 	instantWorkerPool := cr.instantWorkerPool
@@ -1063,6 +1077,13 @@ func (cr *CmdRunner) startSocketIOClient(serverURLStr, apiKey string) error {
 		}
 	})
 	utils.AssertInvariant(err == nil, fmt.Sprintf("Failed to set up cc_message handler: %v", err))
+
+	// Set up nudge handler to trigger immediate message polling
+	err = socketClient.On("nudge", func(args ...any) {
+		log.Info("📡 Received nudge event, triggering immediate poll")
+		cr.messagePoller.Nudge()
+	})
+	utils.AssertInvariant(err == nil, fmt.Sprintf("Failed to set up nudge handler: %v", err))
 
 	// Wait for initial connection or detect auth failure
 	// Wait up to 10 seconds for initial connection
