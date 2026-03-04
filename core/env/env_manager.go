@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"eksecd/core/log"
+	"nairid/core/log"
 	"github.com/joho/godotenv"
 )
 
@@ -42,11 +42,11 @@ func NewEnvManager() (*EnvManager, error) {
 	return em, nil
 }
 
-// GetConfigDir returns the config directory path, either from EKSEC_CONFIG_DIR
-// environment variable or the default ~/.config/eksecd
+// GetConfigDir returns the config directory path, either from NAIRI_CONFIG_DIR
+// environment variable or the default ~/.config/nairid
 func GetConfigDir() (string, error) {
-	// Check if EKSEC_CONFIG_DIR is set
-	if configDir := os.Getenv("EKSEC_CONFIG_DIR"); configDir != "" {
+	// Check if NAIRI_CONFIG_DIR is set
+	if configDir := os.Getenv("NAIRI_CONFIG_DIR"); configDir != "" {
 		// Expand ~ if present
 		if len(configDir) >= 2 && configDir[:2] == "~/" {
 			homeDir, err := os.UserHomeDir()
@@ -63,13 +63,13 @@ func GetConfigDir() (string, error) {
 		return configDir, nil
 	}
 
-	// Default to ~/.config/eksecd
+	// Default to ~/.config/nairid
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
 
-	configDir := filepath.Join(homeDir, ".config", "eksecd")
+	configDir := filepath.Join(homeDir, ".config", "nairid")
 
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create config directory: %w", err)

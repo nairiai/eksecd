@@ -10,7 +10,7 @@ import (
 
 func TestEnvManager_Basic(t *testing.T) {
 	// Create a temporary directory for testing
-	tempDir, err := os.MkdirTemp("", "eksecd-test")
+	tempDir, err := os.MkdirTemp("", "nairid-test")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestEnvManager_Basic(t *testing.T) {
 
 func TestEnvManager_Reload(t *testing.T) {
 	// Create a temporary directory for testing
-	tempDir, err := os.MkdirTemp("", "eksecd-test")
+	tempDir, err := os.MkdirTemp("", "nairid-test")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestEnvManager_Reload(t *testing.T) {
 
 func TestEnvManager_ThreadSafety(t *testing.T) {
 	// Create a temporary directory for testing
-	tempDir, err := os.MkdirTemp("", "eksecd-test")
+	tempDir, err := os.MkdirTemp("", "nairid-test")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
@@ -191,12 +191,12 @@ func TestEnvManager_MissingFile(t *testing.T) {
 }
 
 func TestGetConfigDir_Default(t *testing.T) {
-	// Ensure EKSEC_CONFIG_DIR is not set
-	originalValue := os.Getenv("EKSEC_CONFIG_DIR")
-	os.Unsetenv("EKSEC_CONFIG_DIR")
+	// Ensure NAIRI_CONFIG_DIR is not set
+	originalValue := os.Getenv("NAIRI_CONFIG_DIR")
+	os.Unsetenv("NAIRI_CONFIG_DIR")
 	defer func() {
 		if originalValue != "" {
-			os.Setenv("EKSEC_CONFIG_DIR", originalValue)
+			os.Setenv("NAIRI_CONFIG_DIR", originalValue)
 		}
 	}()
 
@@ -210,7 +210,7 @@ func TestGetConfigDir_Default(t *testing.T) {
 		t.Fatalf("Failed to get home directory: %v", err)
 	}
 
-	expectedDir := filepath.Join(homeDir, ".config", "eksecd")
+	expectedDir := filepath.Join(homeDir, ".config", "nairid")
 	if configDir != expectedDir {
 		t.Errorf("Expected config dir '%s', got '%s'", expectedDir, configDir)
 	}
@@ -223,7 +223,7 @@ func TestGetConfigDir_Default(t *testing.T) {
 
 func TestGetConfigDir_CustomAbsolute(t *testing.T) {
 	// Create a temporary directory for testing
-	tempDir, err := os.MkdirTemp("", "eksecd-config-test")
+	tempDir, err := os.MkdirTemp("", "nairid-config-test")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
@@ -231,13 +231,13 @@ func TestGetConfigDir_CustomAbsolute(t *testing.T) {
 
 	// Set custom config directory
 	customDir := filepath.Join(tempDir, "custom-config")
-	originalValue := os.Getenv("EKSEC_CONFIG_DIR")
-	os.Setenv("EKSEC_CONFIG_DIR", customDir)
+	originalValue := os.Getenv("NAIRI_CONFIG_DIR")
+	os.Setenv("NAIRI_CONFIG_DIR", customDir)
 	defer func() {
 		if originalValue != "" {
-			os.Setenv("EKSEC_CONFIG_DIR", originalValue)
+			os.Setenv("NAIRI_CONFIG_DIR", originalValue)
 		} else {
-			os.Unsetenv("EKSEC_CONFIG_DIR")
+			os.Unsetenv("NAIRI_CONFIG_DIR")
 		}
 	}()
 
@@ -258,13 +258,13 @@ func TestGetConfigDir_CustomAbsolute(t *testing.T) {
 
 func TestGetConfigDir_CustomTilde(t *testing.T) {
 	// Set custom config directory with tilde
-	originalValue := os.Getenv("EKSEC_CONFIG_DIR")
-	os.Setenv("EKSEC_CONFIG_DIR", "~/.eksecd-custom")
+	originalValue := os.Getenv("NAIRI_CONFIG_DIR")
+	os.Setenv("NAIRI_CONFIG_DIR", "~/.nairid-custom")
 	defer func() {
 		if originalValue != "" {
-			os.Setenv("EKSEC_CONFIG_DIR", originalValue)
+			os.Setenv("NAIRI_CONFIG_DIR", originalValue)
 		} else {
-			os.Unsetenv("EKSEC_CONFIG_DIR")
+			os.Unsetenv("NAIRI_CONFIG_DIR")
 		}
 	}()
 
@@ -278,7 +278,7 @@ func TestGetConfigDir_CustomTilde(t *testing.T) {
 		t.Fatalf("Failed to get home directory: %v", err)
 	}
 
-	expectedDir := filepath.Join(homeDir, ".eksecd-custom")
+	expectedDir := filepath.Join(homeDir, ".nairid-custom")
 	if configDir != expectedDir {
 		t.Errorf("Expected config dir '%s', got '%s'", expectedDir, configDir)
 	}
