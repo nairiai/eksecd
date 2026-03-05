@@ -237,8 +237,16 @@ func extractZipFile(file *zip.File, targetPath string) error {
 		return fmt.Errorf("failed to read file content: %w", err)
 	}
 
+	// Preserve the execute bit from the original file in the ZIP archive.
+	// Skills often contain shell scripts (.sh) that need to be executable.
+	// Without this, agents waste turns running chmod +x at runtime.
+	perm := file.Mode().Perm()
+	if perm == 0 {
+		perm = 0644
+	}
+
 	// Write to target path
-	if err := writeFileAsTargetUser(targetPath, content, 0644); err != nil {
+	if err := writeFileAsTargetUser(targetPath, content, perm); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 

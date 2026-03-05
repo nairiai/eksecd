@@ -52,6 +52,18 @@ func writeFileAsTargetUser(filePath string, content []byte, perm os.FileMode) er
 		return fmt.Errorf("failed to write file as user %s: %w (stderr: %s)", execUser, err, stderr.String())
 	}
 
+	// Apply file permissions if they differ from the default.
+	// tee creates files with umask-based permissions (typically 0664), so we need
+	// an explicit chmod to preserve the execute bit from ZIP archives (e.g., skill scripts).
+	if perm != 0644 && perm != 0 {
+		chmodCmd := exec.Command("sudo", "-u", execUser, "chmod", fmt.Sprintf("%o", perm), filePath)
+		var chmodStderr bytes.Buffer
+		chmodCmd.Stderr = &chmodStderr
+		if err := chmodCmd.Run(); err != nil {
+			return fmt.Errorf("failed to chmod file as user %s: %w (stderr: %s)", execUser, err, chmodStderr.String())
+		}
+	}
+
 	return nil
 }
 
