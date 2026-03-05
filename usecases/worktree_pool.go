@@ -616,8 +616,8 @@ func (p *WorktreePool) ReclaimOrphanedPoolWorktrees() error {
 			continue
 		}
 
-		// Only reclaim if it has a pool-ready branch
-		if !strings.HasPrefix(branchName, "nairid/pool-ready-") {
+		// Only reclaim if it has a pool-ready branch (nairid/ or legacy eksecd/ prefix)
+		if !strings.HasPrefix(branchName, "nairid/pool-ready-") && !strings.HasPrefix(branchName, "eksecd/pool-ready-") {
 			log.Info("⚠️ Worktree %s has non-pool branch %s, removing", wtPath, branchName)
 			if err := p.gitClient.RemoveWorktree(wtPath); err != nil {
 				log.Warn("⚠️ Failed to remove worktree: %v", err)

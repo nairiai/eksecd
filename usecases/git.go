@@ -821,7 +821,7 @@ func (g *GitUseCase) CheckPRStatusByID(prID string) (string, error) {
 }
 
 func (g *GitUseCase) CleanupStaleBranches() error {
-	log.Info("📋 Starting to cleanup stale nairid branches")
+	log.Info("📋 Starting to cleanup stale nairid/eksecd branches")
 
 	// Check if we're in repo mode
 	repoContext := g.appState.GetRepositoryContext()
@@ -865,8 +865,8 @@ func (g *GitUseCase) CleanupStaleBranches() error {
 	protectedBranches := []string{"main", "master", currentBranch, defaultBranch}
 
 	for _, branch := range localBranches {
-		// Only process nairid/ branches
-		if !strings.HasPrefix(branch, "nairid/") {
+		// Only process nairid/ or legacy eksecd/ branches
+		if !strings.HasPrefix(branch, "nairid/") && !strings.HasPrefix(branch, "eksecd/") {
 			continue
 		}
 
@@ -890,7 +890,7 @@ func (g *GitUseCase) CleanupStaleBranches() error {
 		}
 
 		// Skip pool worktree branches (managed by worktree pool)
-		if strings.HasPrefix(branch, "nairid/pool-ready-") {
+		if strings.HasPrefix(branch, "nairid/pool-ready-") || strings.HasPrefix(branch, "eksecd/pool-ready-") {
 			log.Info("⚠️ Skipping pool branch: %s", branch)
 			continue
 		}
@@ -900,12 +900,12 @@ func (g *GitUseCase) CleanupStaleBranches() error {
 	}
 
 	if len(branchesToDelete) == 0 {
-		log.Info("✅ No stale nairid branches found")
+		log.Info("✅ No stale nairid/eksecd branches found")
 		log.Info("📋 Completed successfully - no stale branches to cleanup")
 		return nil
 	}
 
-	log.Info("🧹 Found %d stale nairid branches to delete", len(branchesToDelete))
+	log.Info("🧹 Found %d stale nairid/eksecd branches to delete", len(branchesToDelete))
 
 	// Delete each stale branch
 	deletedCount := 0
