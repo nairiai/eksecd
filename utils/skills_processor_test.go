@@ -245,6 +245,70 @@ func TestDetectSingleRootDirectory(t *testing.T) {
 	}
 }
 
+func TestExtractZipToDirectory_PreservesExecutePermission(t *testing.T) {
+	// Ensure AGENT_EXEC_USER is unset so we use direct file writes
+	os.Unsetenv("AGENT_EXEC_USER")
+
+	tmpDir := t.TempDir()
+	zipPath := filepath.Join(tmpDir, "test.zip")
+	extractDir := filepath.Join(tmpDir, "extract")
+
+	// Create a ZIP with an executable script using CreateHeader to set permissions
+	zipFile, err := os.Create(zipPath)
+	if err != nil {
+		t.Fatalf("Failed to create zip file: %v", err)
+	}
+	w := zip.NewWriter(zipFile)
+
+	// Add a regular file (no execute bit)
+	regularHeader := &zip.FileHeader{Name: "README.md"}
+	regularHeader.SetMode(0644)
+	rf, err := w.CreateHeader(regularHeader)
+	if err != nil {
+		t.Fatalf("Failed to create regular file header: %v", err)
+	}
+	if _, err := rf.Write([]byte("# README")); err != nil {
+		t.Fatalf("Failed to write regular file: %v", err)
+	}
+
+	// Add an executable script (with execute bit)
+	scriptHeader := &zip.FileHeader{Name: "scripts/deploy.sh"}
+	scriptHeader.SetMode(0755)
+	sf, err := w.CreateHeader(scriptHeader)
+	if err != nil {
+		t.Fatalf("Failed to create script file header: %v", err)
+	}
+	if _, err := sf.Write([]byte("#!/bin/bash\necho deploy")); err != nil {
+		t.Fatalf("Failed to write script file: %v", err)
+	}
+
+	w.Close()
+	zipFile.Close()
+
+	// Extract the ZIP
+	if err := ExtractZipToDirectory(zipPath, extractDir); err != nil {
+		t.Fatalf("ExtractZipToDirectory failed: %v", err)
+	}
+
+	// Verify the regular file does NOT have execute permission
+	readmeInfo, err := os.Stat(filepath.Join(extractDir, "README.md"))
+	if err != nil {
+		t.Fatalf("Failed to stat README.md: %v", err)
+	}
+	if readmeInfo.Mode().Perm()&0111 != 0 {
+		t.Errorf("README.md should not be executable, got mode %o", readmeInfo.Mode().Perm())
+	}
+
+	// Verify the script DOES have execute permission
+	scriptInfo, err := os.Stat(filepath.Join(extractDir, "scripts/deploy.sh"))
+	if err != nil {
+		t.Fatalf("Failed to stat scripts/deploy.sh: %v", err)
+	}
+	if scriptInfo.Mode().Perm()&0111 == 0 {
+		t.Errorf("scripts/deploy.sh should be executable, got mode %o", scriptInfo.Mode().Perm())
+	}
+}
+
 // Helper function to create a test ZIP file
 func createTestZip(zipPath string, files map[string]string) error {
 	zipFile, err := os.Create(zipPath)
