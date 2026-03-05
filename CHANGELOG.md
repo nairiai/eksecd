@@ -1,3 +1,10 @@
+## [v0.0.91] - 2026-03-05
+
+### Bugfixes
+
+- Revert infrastructure-facing renames for backwards compat ([#180](https://github.com/nairiai/eksecd/pull/180))
+  - Restore original `eksecd` binary name, environment variable prefixes, and branch naming to maintain backwards compatibility with existing infrastructure tooling and deployment scripts
+
 ## [v0.0.90] - 2026-03-05
 
 ### Refactoring
