@@ -42,6 +42,7 @@ type PooledWorktree struct {
 type WorktreePool struct {
 	ready           []PooledWorktree
 	mutex           sync.Mutex
+	mainRepoMu      sync.Mutex     // serializes git operations on the main repository (checkout, reset, clean)
 	gitClient       *clients.GitClient
 	basePath        string        // ~/.eksec_worktrees/
 	targetSize      int           // from WORKTREE_POOL_SIZE env
@@ -87,6 +88,19 @@ func (p *WorktreePool) WaitForInitialFill() {
 func (p *WorktreePool) Stop() {
 	close(p.stopChan)
 	p.wg.Wait()
+}
+
+// LockMainRepo acquires the main repository mutex.
+// This must be held when performing git operations (checkout, reset, clean) on the
+// main repository to prevent concurrent access from the pool replenisher and
+// synchronous worktree creation racing for .git/index.lock.
+func (p *WorktreePool) LockMainRepo() {
+	p.mainRepoMu.Lock()
+}
+
+// UnlockMainRepo releases the main repository mutex.
+func (p *WorktreePool) UnlockMainRepo() {
+	p.mainRepoMu.Unlock()
 }
 
 // isStopping returns true if the pool has been signaled to stop.
@@ -270,11 +284,17 @@ func (p *WorktreePool) replenish() error {
 	// Reset main repo to default branch before creating worktree to prevent
 	// cross-pollination of changes between worktrees. This ensures the main
 	// repository is in a clean, known state when spawning new worktrees.
-	if err := p.resetMainRepoToDefaultBranch(); err != nil {
+	// The lock prevents concurrent git operations on the main repo (e.g., a
+	// synchronous worktree creation fallback racing with the pool replenisher)
+	// which would cause .git/index.lock conflicts.
+	p.mainRepoMu.Lock()
+	err := p.resetMainRepoToDefaultBranch()
+	p.mainRepoMu.Unlock()
+	if err != nil {
 		return fmt.Errorf("failed to reset main repo before worktree creation: %w", err)
 	}
 
-	// Fetch latest from origin (safe for concurrent calls)
+	// Fetch latest from origin (safe for concurrent calls - does not use index.lock)
 	if err := p.gitClient.FetchOrigin(); err != nil {
 		return fmt.Errorf("failed to fetch from origin: %w", err)
 	}

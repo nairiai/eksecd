@@ -1254,12 +1254,21 @@ func (g *GitUseCase) PrepareForNewConversationWithWorktree(jobID, conversationHi
 	// Reset main repo to default branch before creating worktree to prevent
 	// cross-pollination of changes between worktrees. This ensures the main
 	// repository is in a clean, known state when spawning new worktrees.
-	if err := g.resetAndPullDefaultBranch(); err != nil {
-		log.Error("❌ Failed to reset main repo to default branch before worktree creation: %v", err)
-		return "", "", fmt.Errorf("failed to reset main repo before worktree creation: %w", err)
+	// Lock the main repo mutex to prevent racing with the pool replenisher's
+	// resetMainRepoToDefaultBranch() which would cause .git/index.lock conflicts.
+	if g.worktreePool != nil {
+		g.worktreePool.LockMainRepo()
+	}
+	resetErr := g.resetAndPullDefaultBranch()
+	if g.worktreePool != nil {
+		g.worktreePool.UnlockMainRepo()
+	}
+	if resetErr != nil {
+		log.Error("❌ Failed to reset main repo to default branch before worktree creation: %v", resetErr)
+		return "", "", fmt.Errorf("failed to reset main repo before worktree creation: %w", resetErr)
 	}
 
-	// Fetch latest from origin (safe for concurrent calls)
+	// Fetch latest from origin (safe for concurrent calls - does not use index.lock)
 	if err := g.gitClient.FetchOrigin(); err != nil {
 		log.Error("❌ Failed to fetch from origin: %v", err)
 		return "", "", fmt.Errorf("failed to fetch from origin: %w", err)
