@@ -3,6 +3,7 @@ package utils
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -236,7 +237,7 @@ func TestFetchAndStoreAttachment_ValidPNG(t *testing.T) {
 	}
 
 	// Cleanup
-	os.RemoveAll(filepath.Join("/tmp", "eksecd", "attachments", sessionID))
+	_ = os.RemoveAll(filepath.Join("/tmp", "eksecd", "attachments", sessionID))
 }
 
 func TestFetchAndStoreAttachment_APIError(t *testing.T) {
@@ -256,7 +257,7 @@ func TestFetchAndStoreAttachment_APIError(t *testing.T) {
 	}
 
 	// Cleanup
-	os.RemoveAll(filepath.Join("/tmp", "eksecd", "attachments", sessionID))
+	_ = os.RemoveAll(filepath.Join("/tmp", "eksecd", "attachments", sessionID))
 }
 
 func TestFetchAndStoreAttachment_InvalidBase64(t *testing.T) {
@@ -285,7 +286,7 @@ func TestFetchAndStoreAttachment_InvalidBase64(t *testing.T) {
 	}
 
 	// Cleanup
-	os.RemoveAll(filepath.Join("/tmp", "eksecd", "attachments", sessionID))
+	_ = os.RemoveAll(filepath.Join("/tmp", "eksecd", "attachments", sessionID))
 }
 
 // Test directory functions
@@ -304,7 +305,7 @@ func TestGetAttachmentsDir_CreatesPath(t *testing.T) {
 	}
 
 	// Cleanup
-	os.RemoveAll(filepath.Join("/tmp", "eksecd", "attachments", sessionID))
+	_ = os.RemoveAll(filepath.Join("/tmp", "eksecd", "attachments", sessionID))
 }
 
 func TestGetAttachmentsDir_CreatesDirectory(t *testing.T) {
@@ -326,7 +327,7 @@ func TestGetAttachmentsDir_CreatesDirectory(t *testing.T) {
 	}
 
 	// Cleanup
-	os.RemoveAll(filepath.Join("/tmp", "eksecd", "attachments", sessionID))
+	_ = os.RemoveAll(filepath.Join("/tmp", "eksecd", "attachments", sessionID))
 }
 
 // Test formatting functions
@@ -477,7 +478,7 @@ func TestFetchAndStoreArtifact_Success(t *testing.T) {
 
 	// Create temp directory for test
 	tempDir := filepath.Join(os.TempDir(), "eksec_test_artifacts")
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	location := filepath.Join(tempDir, "test-rule.md")
 
@@ -540,7 +541,7 @@ func TestFetchAndStoreArtifact_WithTilde(t *testing.T) {
 	}
 
 	// Cleanup
-	os.Remove(expandedPath)
+	_ = os.Remove(expandedPath)
 }
 
 func TestFetchAndStoreArtifact_APIError(t *testing.T) {
@@ -553,7 +554,7 @@ func TestFetchAndStoreArtifact_APIError(t *testing.T) {
 	client := clients.NewAgentsApiClient("test-api-key", server.URL, "test-agent-id")
 
 	tempDir := filepath.Join(os.TempDir(), "eksec_test_artifacts_error")
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	location := filepath.Join(tempDir, "test-rule.md")
 
@@ -579,7 +580,7 @@ func TestFetchAndStoreArtifact_EmptyContent(t *testing.T) {
 	client := clients.NewAgentsApiClient("test-api-key", server.URL, "test-agent-id")
 
 	tempDir := filepath.Join(os.TempDir(), "eksec_test_artifacts_empty")
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	location := filepath.Join(tempDir, "test-rule.md")
 
@@ -591,5 +592,220 @@ func TestFetchAndStoreArtifact_EmptyContent(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "empty") {
 		t.Errorf("Expected 'empty' error, got: %v", err)
+	}
+}
+
+func TestScanOutboundAttachments_EmptyDir(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "nairid-outbound-scan-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	originalValue := os.Getenv("NAIRI_CONFIG_DIR")
+	_ = os.Setenv("NAIRI_CONFIG_DIR", tempDir)
+	defer func() {
+		if originalValue != "" {
+			_ = os.Setenv("NAIRI_CONFIG_DIR", originalValue)
+		} else {
+			_ = os.Unsetenv("NAIRI_CONFIG_DIR")
+		}
+	}()
+
+	files, err := ScanOutboundAttachments("empty-job")
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if len(files) != 0 {
+		t.Errorf("Expected 0 files, got %d", len(files))
+	}
+}
+
+func TestScanOutboundAttachments_WithFiles(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "nairid-outbound-scan-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	originalValue := os.Getenv("NAIRI_CONFIG_DIR")
+	_ = os.Setenv("NAIRI_CONFIG_DIR", tempDir)
+	defer func() {
+		if originalValue != "" {
+			_ = os.Setenv("NAIRI_CONFIG_DIR", originalValue)
+		} else {
+			_ = os.Unsetenv("NAIRI_CONFIG_DIR")
+		}
+	}()
+
+	jobDir := filepath.Join(tempDir, "attachments", "test-job")
+	_ = os.MkdirAll(jobDir, 0755)
+	_ = os.WriteFile(filepath.Join(jobDir, "chart.png"), []byte("fake png"), 0644)
+	_ = os.WriteFile(filepath.Join(jobDir, "report.csv"), []byte("a,b,c"), 0644)
+
+	files, err := ScanOutboundAttachments("test-job")
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if len(files) != 2 {
+		t.Errorf("Expected 2 files, got %d", len(files))
+	}
+}
+
+func TestScanOutboundAttachments_SkipsDirectories(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "nairid-outbound-scan-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	originalValue := os.Getenv("NAIRI_CONFIG_DIR")
+	_ = os.Setenv("NAIRI_CONFIG_DIR", tempDir)
+	defer func() {
+		if originalValue != "" {
+			_ = os.Setenv("NAIRI_CONFIG_DIR", originalValue)
+		} else {
+			_ = os.Unsetenv("NAIRI_CONFIG_DIR")
+		}
+	}()
+
+	jobDir := filepath.Join(tempDir, "attachments", "test-job-dirs")
+	_ = os.MkdirAll(jobDir, 0755)
+	_ = os.WriteFile(filepath.Join(jobDir, "file.txt"), []byte("hello"), 0644)
+	_ = os.MkdirAll(filepath.Join(jobDir, "subdir"), 0755)
+
+	files, err := ScanOutboundAttachments("test-job-dirs")
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if len(files) != 1 {
+		t.Errorf("Expected 1 file (skipping subdir), got %d", len(files))
+	}
+}
+
+func TestClearOutboundAttachments(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "nairid-outbound-clear-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	originalValue := os.Getenv("NAIRI_CONFIG_DIR")
+	_ = os.Setenv("NAIRI_CONFIG_DIR", tempDir)
+	defer func() {
+		if originalValue != "" {
+			_ = os.Setenv("NAIRI_CONFIG_DIR", originalValue)
+		} else {
+			_ = os.Unsetenv("NAIRI_CONFIG_DIR")
+		}
+	}()
+
+	jobDir := filepath.Join(tempDir, "attachments", "clear-job")
+	_ = os.MkdirAll(jobDir, 0755)
+	_ = os.WriteFile(filepath.Join(jobDir, "file1.png"), []byte("data1"), 0644)
+	_ = os.WriteFile(filepath.Join(jobDir, "file2.csv"), []byte("data2"), 0644)
+
+	err = ClearOutboundAttachments("clear-job")
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	entries, _ := os.ReadDir(jobDir)
+	if len(entries) != 0 {
+		t.Errorf("Expected 0 entries after clear, got %d", len(entries))
+	}
+}
+
+func TestClearOutboundAttachments_EmptyDir(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "nairid-outbound-clear-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	originalValue := os.Getenv("NAIRI_CONFIG_DIR")
+	_ = os.Setenv("NAIRI_CONFIG_DIR", tempDir)
+	defer func() {
+		if originalValue != "" {
+			_ = os.Setenv("NAIRI_CONFIG_DIR", originalValue)
+		} else {
+			_ = os.Unsetenv("NAIRI_CONFIG_DIR")
+		}
+	}()
+
+	err = ClearOutboundAttachments("empty-clear-job")
+	if err != nil {
+		t.Fatalf("Expected no error for empty dir, got: %v", err)
+	}
+}
+
+func TestUploadOutboundAttachments_WithMockServer(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "nairid-outbound-upload-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	originalValue := os.Getenv("NAIRI_CONFIG_DIR")
+	_ = os.Setenv("NAIRI_CONFIG_DIR", tempDir)
+	defer func() {
+		if originalValue != "" {
+			_ = os.Setenv("NAIRI_CONFIG_DIR", originalValue)
+		} else {
+			_ = os.Unsetenv("NAIRI_CONFIG_DIR")
+		}
+	}()
+
+	jobDir := filepath.Join(tempDir, "attachments", "upload-job")
+	_ = os.MkdirAll(jobDir, 0755)
+	_ = os.WriteFile(filepath.Join(jobDir, "chart.png"), []byte("fake png data"), 0644)
+	_ = os.WriteFile(filepath.Join(jobDir, "report.csv"), []byte("col1,col2"), 0644)
+
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.WriteHeader(http.StatusCreated)
+		resp := map[string]string{"attachment_id": fmt.Sprintf("att_%d", callCount)}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := clients.NewAgentsApiClient("test-key", server.URL, "test-agent")
+	ids, err := UploadOutboundAttachments(client, "upload-job")
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if len(ids) != 2 {
+		t.Errorf("Expected 2 attachment IDs, got %d", len(ids))
+	}
+	if callCount != 2 {
+		t.Errorf("Expected 2 API calls, got %d", callCount)
+	}
+}
+
+func TestUploadOutboundAttachments_EmptyDir(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "nairid-outbound-upload-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	originalValue := os.Getenv("NAIRI_CONFIG_DIR")
+	_ = os.Setenv("NAIRI_CONFIG_DIR", tempDir)
+	defer func() {
+		if originalValue != "" {
+			_ = os.Setenv("NAIRI_CONFIG_DIR", originalValue)
+		} else {
+			_ = os.Unsetenv("NAIRI_CONFIG_DIR")
+		}
+	}()
+
+	client := clients.NewAgentsApiClient("test-key", "http://localhost:9999", "test-agent")
+	ids, err := UploadOutboundAttachments(client, "empty-upload-job")
+	if err != nil {
+		t.Fatalf("Expected no error for empty dir, got: %v", err)
+	}
+	if ids != nil {
+		t.Errorf("Expected nil for empty dir, got: %v", ids)
 	}
 }

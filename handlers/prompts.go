@@ -76,7 +76,8 @@ Use the current working directory as your workspace for all file operations.
 MODE: You are in ASK mode.
 - DO NOT modify, create, or delete any files in the repository
 - If asked to write code, provide it in your response instead of writing to the filesystem
-- EXCEPTION: You may create temporary files in /tmp for analysis or calculations`
+- EXCEPTION: You may create temporary files in /tmp for analysis or calculations
+- EXCEPTION: You may save files to the outbound attachments directory (if configured above) to deliver downloadable files to the user`
 	}
 
 	return basePrompt
@@ -110,6 +111,36 @@ Use the current working directory as your workspace for all file operations.
 	return base
 }
 
+// outboundAttachmentInstructions returns the outbound attachment prompt text for a given directory.
+func outboundAttachmentInstructions(attachmentsDir string) string {
+	return fmt.Sprintf(`CRITICAL - File Attachments:
+You CAN send files and attachments to the user. To do so, save the file to this directory: %s
+Files placed there are automatically uploaded and delivered to the user as downloadable attachments.
+ALWAYS use this directory when the user wants a file, attachment, or downloadable output — this is the ONLY way to deliver files to them.
+NEVER tell the user you cannot send attachments or files — you can, by writing to the directory above.
+NEVER save files meant for the user to the working directory — always use the attachments directory.
+Supported formats: images, PDFs, CSVs, text files, archives, any binary file. Max 50 MB per file.`, attachmentsDir)
+}
+
+// AppendOutboundAttachmentInstructions appends instructions for outbound attachments to a system prompt
+func AppendOutboundAttachmentInstructions(base string, attachmentsDir string) string {
+	if attachmentsDir == "" {
+		return base
+	}
+
+	return base + "\n\n" + outboundAttachmentInstructions(attachmentsDir)
+}
+
+// BuildOutboundAttachmentSystemPrompt returns a standalone system prompt for outbound attachments,
+// used when continuing conversations (since --append-system-prompt is not persisted across --resume).
+func BuildOutboundAttachmentSystemPrompt(attachmentsDir string) string {
+	if attachmentsDir == "" {
+		return ""
+	}
+
+	return outboundAttachmentInstructions(attachmentsDir)
+}
+
 // AppendModeInstructions appends mode-specific instructions to a base prompt
 func AppendModeInstructions(base string, mode models.AgentMode) string {
 	if mode == models.AgentModeAsk {
@@ -117,7 +148,8 @@ func AppendModeInstructions(base string, mode models.AgentMode) string {
 MODE: You are in ASK mode.
 - DO NOT modify, create, or delete any files in the repository
 - If asked to write code, provide it in your response instead of writing to the filesystem
-- EXCEPTION: You may create temporary files in /tmp for analysis or calculations`
+- EXCEPTION: You may create temporary files in /tmp for analysis or calculations
+- EXCEPTION: You may save files to the outbound attachments directory (if configured above) to deliver downloadable files to the user`
 	}
 	return base
 }
@@ -190,7 +222,8 @@ Use the current working directory as your workspace for all file operations.
 MODE: You are in ASK mode.
 - DO NOT modify, create, or delete any files in the repository
 - If asked to write code, provide it in your response instead of writing to the filesystem
-- EXCEPTION: You may create temporary files in /tmp for analysis or calculations`
+- EXCEPTION: You may create temporary files in /tmp for analysis or calculations
+- EXCEPTION: You may save files to the outbound attachments directory (if configured above) to deliver downloadable files to the user`
 	}
 
 	return basePrompt
