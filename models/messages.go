@@ -122,6 +122,7 @@ type UserMessagePayload struct {
 	ProcessedMessageID string              `json:"processed_message_id"`
 	MessageLink        string              `json:"message_link"`
 	Attachments        []MessageAttachment `json:"attachments,omitempty"`
+	PreviousMessages   []PreviousMessage   `json:"previous_messages,omitempty"`
 	SenderMetadata     *UserMetadata       `json:"sender_metadata,omitempty"`
 }
 
