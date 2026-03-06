@@ -86,6 +86,8 @@ func (mp *MessagePoller) currentInterval() time.Duration {
 }
 
 func (mp *MessagePoller) pollAndDispatch() {
+	log.Info("📡 MessagePoller: Polling for unacked messages...")
+
 	resp, err := mp.apiClient.FetchAgentJobs()
 	if err != nil {
 		mp.consecutiveFailures++
@@ -96,8 +98,17 @@ func (mp *MessagePoller) pollAndDispatch() {
 
 	mp.consecutiveFailures = 0
 
+	totalMessages := 0
+	for _, job := range resp.Jobs {
+		for range job.Messages {
+			totalMessages++
+		}
+	}
+	log.Info("📡 MessagePoller: Fetched %d jobs, %d unacked messages", len(resp.Jobs), totalMessages)
+
 	for _, job := range resp.Jobs {
 		_, jobExists := mp.appState.GetJobData(job.ID)
+		log.Info("📡 MessagePoller: Processing job %s (exists_locally=%v, messages=%d)", job.ID, jobExists, len(job.Messages))
 
 		for _, msg := range job.Messages {
 			if msg.Type == "" {
@@ -107,6 +118,8 @@ func (mp *MessagePoller) pollAndDispatch() {
 			var baseMsg models.BaseMessage
 			if !jobExists {
 				// Job not in local state — upgrade to start_conversation
+				log.Info("📡 MessagePoller: Upgrading message %s to start_conversation (job %s not in local state)", msg.ID, job.ID)
+
 				var userPayload models.UserMessagePayload
 				if err := json.Unmarshal(msg.Payload, &userPayload); err != nil {
 					log.Error("📡 MessagePoller: Failed to unmarshal user payload for start_conversation upgrade: %v", err)
@@ -134,10 +147,11 @@ func (mp *MessagePoller) pollAndDispatch() {
 				baseMsg = models.BaseMessage{
 					ID:      msg.ID,
 					Type:    models.MessageTypeStartConversation,
-					Payload: enrichedPayload,
+					Payload: json.RawMessage(enrichedPayload),
 				}
 				jobExists = true // subsequent messages in same batch are user_message
 			} else {
+				log.Info("📡 MessagePoller: Dispatching message %s as user_message (job %s exists locally)", msg.ID, job.ID)
 				baseMsg = models.BaseMessage{
 					ID:      msg.ID,
 					Type:    models.MessageTypeUserMessage,
@@ -150,6 +164,7 @@ func (mp *MessagePoller) pollAndDispatch() {
 				log.Error("📡 MessagePoller: Failed to persist queued message: %v", err)
 			}
 			mp.dispatcher.Dispatch(baseMsg)
+			log.Info("📡 MessagePoller: Dispatched message %s (type=%s)", msg.ID, baseMsg.Type)
 
 			// Ack the message — failure is non-fatal, will be re-polled
 			if err := mp.apiClient.AckMessage(msg.ID); err != nil {
