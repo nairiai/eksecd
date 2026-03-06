@@ -1,3 +1,17 @@
+## [v0.0.94] - 2026-03-06
+
+### Features
+
+- Add HTTP message redundancy for agent communication ([#184](https://github.com/nairiai/eksecd/pull/184))
+  - Add HTTP-based message sending alongside WebSocket for improved reliability
+  - Messages are sent via both channels with deduplication on the receiving end
+  - Provides fallback communication path when WebSocket connections are unstable
+
+### Bugfixes
+
+- Fix PR footer branding: nairid -> Nairi ([#186](https://github.com/nairiai/eksecd/pull/186))
+  - Update PR description footer to use correct Nairi branding instead of old nairid name
+
 ## [v0.0.93] - 2026-03-05
 
 ### Bugfixes
