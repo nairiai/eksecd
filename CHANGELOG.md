@@ -1,3 +1,13 @@
+## [v0.0.97] - 2026-03-06
+
+### Features
+
+- Add real-time agent progress streaming ([#189](https://github.com/nairiai/eksecd/pull/189))
+  - Stream intermediary progress events (tool calls, text output, reasoning, subagent activity) from CLI agents to the backend in real-time
+  - Switch CLI clients from CombinedOutput to StdoutPipe with line reader for real-time NDJSON streaming
+  - Add per-agent progress mappers normalizing CLI-specific events into a uniform AgentProgressPayload format
+  - Add non-blocking progress queue in MessageSender with best-effort HTTP delivery
+
 ## [v0.0.96] - 2026-03-06
 
 ### Bugfixes
