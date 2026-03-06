@@ -82,6 +82,32 @@ func GetConfigDir() (string, error) {
 	return configDir, nil
 }
 
+// GetOutboundAttachmentsDir returns the directory path for storing outbound attachments for a given job
+// and creates the directory if it doesn't exist. Per-job subdirectories prevent file leakage between concurrent jobs.
+func GetOutboundAttachmentsDir(jobID string) (string, error) {
+	configDir, err := GetConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get config directory: %w", err)
+	}
+
+	attachmentsDir := filepath.Join(configDir, "attachments")
+	dir := filepath.Join(attachmentsDir, jobID)
+	if err := os.MkdirAll(dir, 0775); err != nil {
+		return "", fmt.Errorf("failed to create outbound attachments directory: %w", err)
+	}
+
+	// Explicitly chmod to ensure group-writable regardless of umask.
+	// In managed mode, eksecd runs as ccagent but agents run as agentrunner
+	// (which is in the ccagent group). Without group-write, agents can't save files.
+	for _, d := range []string{attachmentsDir, dir} {
+		if err := os.Chmod(d, 0775); err != nil {
+			return "", fmt.Errorf("failed to set permissions on %s: %w", d, err)
+		}
+	}
+
+	return dir, nil
+}
+
 func (em *EnvManager) Load() error {
 	em.mu.Lock()
 	defer em.mu.Unlock()
@@ -98,7 +124,7 @@ func (em *EnvManager) Load() error {
 
 	for key, value := range envMap {
 		em.envVars[key] = value
-		os.Setenv(key, value)
+		_ = os.Setenv(key, value)
 	}
 
 	log.Debug("Loaded %d environment variables from %s", len(envMap), em.envPath)
@@ -148,7 +174,7 @@ func (em *EnvManager) Reload() error {
 	// Update/add keys from the .env file
 	for key, value := range envMap {
 		em.envVars[key] = value
-		os.Setenv(key, value)
+		_ = os.Setenv(key, value)
 	}
 
 	log.Info("Reloaded %d environment variables from %s", len(envMap), em.envPath)

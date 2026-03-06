@@ -25,6 +25,9 @@ type CLIAgent interface {
 	// ContinueConversation continues an existing conversation
 	ContinueConversation(sessionID, prompt string) (*CLIAgentResult, error)
 
+	// ContinueConversationWithSystemPrompt continues an existing conversation with a system prompt
+	ContinueConversationWithSystemPrompt(sessionID, prompt, systemPrompt string) (*CLIAgentResult, error)
+
 	// StartNewConversationInDir starts a new conversation in a specific working directory
 	StartNewConversationInDir(prompt, workDir string) (*CLIAgentResult, error)
 
@@ -33,6 +36,9 @@ type CLIAgent interface {
 
 	// ContinueConversationInDir continues an existing conversation in a specific directory
 	ContinueConversationInDir(sessionID, prompt, workDir string) (*CLIAgentResult, error)
+
+	// ContinueConversationWithSystemPromptInDir continues an existing conversation with a system prompt in a specific directory
+	ContinueConversationWithSystemPromptInDir(sessionID, prompt, systemPrompt, workDir string) (*CLIAgentResult, error)
 
 	// CleanupOldLogs removes old log files based on age
 	CleanupOldLogs(maxAgeDays int) error

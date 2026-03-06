@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -82,7 +85,7 @@ func (c *AgentsApiClient) FetchAttachment(attachmentID string) (*AttachmentRespo
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Check for successful response
 	if resp.StatusCode != http.StatusOK {
@@ -97,6 +100,66 @@ func (c *AgentsApiClient) FetchAttachment(attachmentID string) (*AttachmentRespo
 	}
 
 	return &attachmentResp, nil
+}
+
+// UploadAttachmentResponse represents the response from the upload attachment endpoint
+type UploadAttachmentResponse struct {
+	AttachmentID string `json:"attachment_id"`
+}
+
+// UploadAttachment uploads a file to the backend and returns the attachment ID
+func (c *AgentsApiClient) UploadAttachment(filePath string) (*UploadAttachmentResponse, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file %s: %w", filePath, err)
+	}
+	defer func() { _ = file.Close() }()
+
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+
+	part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create form file: %w", err)
+	}
+
+	if _, err := io.Copy(part, file); err != nil {
+		return nil, fmt.Errorf("failed to copy file content: %w", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/agents/attachments", c.baseURL)
+	req, err := http.NewRequest("POST", url, &buf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if c.agentID != "" {
+		req.Header.Set("X-AGENT-ID", c.agentID)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusCreated {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var uploadResp UploadAttachmentResponse
+	if err := json.NewDecoder(resp.Body).Decode(&uploadResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &uploadResp, nil
 }
 
 // FetchToken retrieves the current Anthropic token for the authenticated organization
@@ -116,7 +179,7 @@ func (c *AgentsApiClient) FetchToken() (*TokenResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Check for successful response
 	if resp.StatusCode != http.StatusOK {
@@ -163,7 +226,7 @@ func (c *AgentsApiClient) FetchEnvVars() ([]EnvVarEntry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
@@ -199,7 +262,7 @@ func (c *AgentsApiClient) FetchArtifacts() ([]Artifact, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Check for successful response
 	if resp.StatusCode != http.StatusOK {
@@ -259,7 +322,7 @@ func (c *AgentsApiClient) FetchAgentJobs() (*AgentJobsResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
@@ -292,7 +355,7 @@ func (c *AgentsApiClient) AckMessage(messageID string) error {
 	if err != nil {
 		return fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
@@ -326,7 +389,7 @@ func (c *AgentsApiClient) SubmitMessage(msg models.BaseMessage) error {
 	if err != nil {
 		return fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)

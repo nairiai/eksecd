@@ -1,3 +1,29 @@
+## [v0.0.96] - 2026-03-06
+
+### Bugfixes
+
+- Prevent goroutine leak in MessagePoller and MessageSender on WS reconnect ([#190](https://github.com/nairiai/eksecd/pull/190))
+  - Stop old poller and sender goroutines before starting new ones when the WebSocket connection is re-established
+  - Prevents unbounded goroutine growth during repeated reconnections
+
+- Make outbound attachments dir group-writable for agentrunner ([#191](https://github.com/nairiai/eksecd/pull/191))
+  - Set group-writable permissions on the outbound attachments directory so the agentrunner user can write files to it
+  - Fixes attachment delivery failure when running as the unprivileged agentrunner user
+
+## [v0.0.95] - 2026-03-06
+
+### Features
+
+- Add outbound attachment support for agent responses ([#188](https://github.com/nairiai/eksecd/pull/188))
+  - Allow agents to send file attachments (images, documents) back to users alongside text responses
+  - Files placed in the outbound attachments directory are automatically uploaded and delivered
+
+### Improvements
+
+- Persist dedup state to disk and increase TTL to 60min ([#187](https://github.com/nairiai/eksecd/pull/187))
+  - Save message deduplication state to disk so it survives agent restarts
+  - Increase dedup TTL from previous value to 60 minutes for better duplicate rejection
+
 ## [v0.0.94] - 2026-03-06
 
 ### Features

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -26,7 +27,9 @@ type MessageSender struct {
 	messageQueue    chan OutgoingMessage
 	progressQueue   chan OutgoingMessage
 	socketClient    *socket.Socket
+	socketMu        sync.RWMutex
 	apiClient       *clients.AgentsApiClient
+	once            sync.Once
 }
 
 // NewMessageSender creates a new MessageSender instance.
@@ -43,11 +46,33 @@ func NewMessageSender(connectionState *ConnectionState, apiClient *clients.Agent
 }
 
 // Run starts the message sender goroutine that processes the queue.
-// This should be called once with the Socket.IO client reference.
-// It blocks until the message queue is closed.
+// Safe to call multiple times (e.g. on WS reconnect) — only the first call spawns the goroutine.
+// Subsequent calls update the socket client reference for the existing goroutine.
 func (ms *MessageSender) Run(socketClient *socket.Socket) {
+	ms.SetSocketClient(socketClient)
+
+	ms.once.Do(func() {
+		go ms.processQueue()
+	})
+}
+
+// SetSocketClient updates the socket client reference (thread-safe).
+func (ms *MessageSender) SetSocketClient(socketClient *socket.Socket) {
+	ms.socketMu.Lock()
 	ms.socketClient = socketClient
+	ms.socketMu.Unlock()
+
 	go ms.runProgressSender()
+}
+
+// getSocketClient returns the current socket client reference (thread-safe).
+func (ms *MessageSender) getSocketClient() *socket.Socket {
+	ms.socketMu.RLock()
+	defer ms.socketMu.RUnlock()
+	return ms.socketClient
+}
+
+func (ms *MessageSender) processQueue() {
 	log.Info("📤 MessageSender: Started processing queue")
 
 	for msg := range ms.messageQueue {
@@ -88,7 +113,7 @@ func (ms *MessageSender) sendWSWithRetry(msg OutgoingMessage) {
 	attempt := 0
 	operation := func() error {
 		attempt++
-		err := ms.socketClient.Emit(msg.Event, msg.Data)
+		err := ms.getSocketClient().Emit(msg.Event, msg.Data)
 		if err != nil {
 			log.Warn("⚠️ MessageSender: Failed to emit message on event '%s' (attempt %d): %v", msg.Event, attempt, err)
 			return err
