@@ -25,7 +25,9 @@ func MapCodexLineToProgress(line []byte) *models.AgentProgressPayload {
 		var msg struct {
 			Error string `json:"error"`
 		}
-		json.Unmarshal(line, &msg)
+		if err := json.Unmarshal(line, &msg); err != nil {
+			return nil
+		}
 		return &models.AgentProgressPayload{
 			ProgressType: models.ProgressTypeStep,
 			Summary:      fmt.Sprintf("Turn failed: %s", truncateCodex(msg.Error, 200)),
@@ -35,7 +37,9 @@ func MapCodexLineToProgress(line []byte) *models.AgentProgressPayload {
 		var msg struct {
 			Message string `json:"message"`
 		}
-		json.Unmarshal(line, &msg)
+		if err := json.Unmarshal(line, &msg); err != nil {
+			return nil
+		}
 		return &models.AgentProgressPayload{
 			ProgressType: models.ProgressTypeStep,
 			Summary:      truncateCodex(msg.Message, 200),
@@ -69,7 +73,9 @@ func mapCodexItem(line []byte, defaultStatus string) *models.AgentProgressPayloa
 				Command string `json:"command"`
 			} `json:"item"`
 		}
-		json.Unmarshal(line, &detail)
+		if err := json.Unmarshal(line, &detail); err != nil {
+			return nil
+		}
 		return &models.AgentProgressPayload{
 			ProgressType: models.ProgressTypeToolUse,
 			ToolName:     "command_execution",
@@ -83,7 +89,9 @@ func mapCodexItem(line []byte, defaultStatus string) *models.AgentProgressPayloa
 				FilePath string `json:"file_path"`
 			} `json:"item"`
 		}
-		json.Unmarshal(line, &detail)
+		if err := json.Unmarshal(line, &detail); err != nil {
+			return nil
+		}
 		return &models.AgentProgressPayload{
 			ProgressType: models.ProgressTypeToolUse,
 			ToolName:     "file_change",
@@ -98,7 +106,9 @@ func mapCodexItem(line []byte, defaultStatus string) *models.AgentProgressPayloa
 				ToolName   string `json:"tool_name"`
 			} `json:"item"`
 		}
-		json.Unmarshal(line, &detail)
+		if err := json.Unmarshal(line, &detail); err != nil {
+			return nil
+		}
 		toolName := fmt.Sprintf("mcp:%s/%s", detail.Item.ServerName, detail.Item.ToolName)
 		return &models.AgentProgressPayload{
 			ProgressType: models.ProgressTypeToolUse,
@@ -112,7 +122,9 @@ func mapCodexItem(line []byte, defaultStatus string) *models.AgentProgressPayloa
 				Query string `json:"query"`
 			} `json:"item"`
 		}
-		json.Unmarshal(line, &detail)
+		if err := json.Unmarshal(line, &detail); err != nil {
+			return nil
+		}
 		return &models.AgentProgressPayload{
 			ProgressType: models.ProgressTypeToolUse,
 			ToolName:     "web_search",
@@ -144,7 +156,9 @@ func mapCodexItem(line []byte, defaultStatus string) *models.AgentProgressPayloa
 				} `json:"items"`
 			} `json:"item"`
 		}
-		json.Unmarshal(line, &detail)
+		if err := json.Unmarshal(line, &detail); err != nil {
+			return nil
+		}
 		total := len(detail.Item.Items)
 		done := 0
 		for _, item := range detail.Item.Items {

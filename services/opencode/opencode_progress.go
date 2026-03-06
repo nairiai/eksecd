@@ -32,7 +32,9 @@ func MapOpenCodeLineToProgress(line []byte) *models.AgentProgressPayload {
 				Reason string `json:"reason"`
 			} `json:"part"`
 		}
-		json.Unmarshal(line, &msg)
+		if err := json.Unmarshal(line, &msg); err != nil {
+			return nil
+		}
 		summary := "Step completed"
 		if msg.Part.Reason != "" {
 			summary = fmt.Sprintf("Step completed (reason: %s)", msg.Part.Reason)

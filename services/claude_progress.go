@@ -131,7 +131,9 @@ func mapClaudeSystem(line []byte, subtype string) *models.AgentProgressPayload {
 		var msg struct {
 			Description string `json:"description"`
 		}
-		json.Unmarshal(line, &msg)
+		if err := json.Unmarshal(line, &msg); err != nil {
+			return nil
+		}
 		return &models.AgentProgressPayload{
 			ProgressType: models.ProgressTypeSubagent,
 			Summary:      "Subagent started: " + truncate(msg.Description, 200),
@@ -141,7 +143,9 @@ func mapClaudeSystem(line []byte, subtype string) *models.AgentProgressPayload {
 		var msg struct {
 			Description string `json:"description"`
 		}
-		json.Unmarshal(line, &msg)
+		if err := json.Unmarshal(line, &msg); err != nil {
+			return nil
+		}
 		return &models.AgentProgressPayload{
 			ProgressType: models.ProgressTypeSubagent,
 			Summary:      truncate(msg.Description, 200),
@@ -152,7 +156,9 @@ func mapClaudeSystem(line []byte, subtype string) *models.AgentProgressPayload {
 			Status  string `json:"status"`
 			Summary string `json:"summary"`
 		}
-		json.Unmarshal(line, &msg)
+		if err := json.Unmarshal(line, &msg); err != nil {
+			return nil
+		}
 		toolStatus := "completed"
 		if msg.Status == "failed" || msg.Status == "stopped" {
 			toolStatus = "error"
