@@ -600,6 +600,7 @@ func NewCmdRunner(agentType, permissionMode, model, repoPath string) (*CmdRunner
 		cr.agentsApiClient,
 		cr.dispatcher,
 		cr.messageHandler,
+		cr.appState,
 		30*time.Second,
 	)
 

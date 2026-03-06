@@ -223,12 +223,13 @@ type AgentJobsResponse struct {
 
 // AgentJob represents a job assigned to the agent
 type AgentJob struct {
-	ID        string            `json:"id"`
-	JobType   string            `json:"job_type"`
-	Mode      string            `json:"mode"`
-	Title     *string           `json:"title"`
-	CreatedAt time.Time         `json:"created_at"`
-	Messages  []AgentJobMessage `json:"messages"`
+	ID           string            `json:"id"`
+	JobType      string            `json:"job_type"`
+	Mode         string            `json:"mode"`
+	Title        *string           `json:"title"`
+	CreatedAt    time.Time         `json:"created_at"`
+	Messages     []AgentJobMessage `json:"messages"`
+	SystemPrompt string            `json:"system_prompt,omitempty"`
 }
 
 // AgentJobMessage represents a message within an agent job

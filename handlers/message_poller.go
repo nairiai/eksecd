@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"time"
 
 	"nairid/clients"
@@ -19,6 +20,7 @@ type MessagePoller struct {
 	apiClient           *clients.AgentsApiClient
 	dispatcher          *JobDispatcher
 	messageHandler      *MessageHandler
+	appState            *models.AppState
 	pollInterval        time.Duration
 	stopChan            chan struct{}
 	consecutiveFailures int
@@ -29,12 +31,14 @@ func NewMessagePoller(
 	apiClient *clients.AgentsApiClient,
 	dispatcher *JobDispatcher,
 	messageHandler *MessageHandler,
+	appState *models.AppState,
 	pollInterval time.Duration,
 ) *MessagePoller {
 	return &MessagePoller{
 		apiClient:      apiClient,
 		dispatcher:     dispatcher,
 		messageHandler: messageHandler,
+		appState:       appState,
 		pollInterval:   pollInterval,
 		stopChan:       make(chan struct{}),
 	}
@@ -93,27 +97,59 @@ func (mp *MessagePoller) pollAndDispatch() {
 	mp.consecutiveFailures = 0
 
 	for _, job := range resp.Jobs {
+		_, jobExists := mp.appState.GetJobData(job.ID)
+
 		for _, msg := range job.Messages {
 			if msg.Type == "" {
 				continue
 			}
 
-			baseMsg := models.BaseMessage{
-				ID:      msg.ID,
-				Type:    msg.Type,
-				Payload: msg.Payload,
+			var baseMsg models.BaseMessage
+			if !jobExists {
+				// Job not in local state — upgrade to start_conversation
+				var userPayload models.UserMessagePayload
+				if err := json.Unmarshal(msg.Payload, &userPayload); err != nil {
+					log.Error("📡 MessagePoller: Failed to unmarshal user payload for start_conversation upgrade: %v", err)
+					continue
+				}
+
+				startPayload := models.StartConversationPayload{
+					JobID:              userPayload.JobID,
+					Message:            userPayload.Message,
+					ProcessedMessageID: userPayload.ProcessedMessageID,
+					MessageLink:        userPayload.MessageLink,
+					Mode:               models.AgentMode(job.Mode),
+					Attachments:        userPayload.Attachments,
+					PreviousMessages:   userPayload.PreviousMessages,
+					SenderMetadata:     userPayload.SenderMetadata,
+					SystemPrompt:       job.SystemPrompt,
+				}
+
+				enrichedPayload, err := json.Marshal(startPayload)
+				if err != nil {
+					log.Error("📡 MessagePoller: Failed to marshal start_conversation payload: %v", err)
+					continue
+				}
+
+				baseMsg = models.BaseMessage{
+					ID:      msg.ID,
+					Type:    models.MessageTypeStartConversation,
+					Payload: enrichedPayload,
+				}
+				jobExists = true // subsequent messages in same batch are user_message
+			} else {
+				baseMsg = models.BaseMessage{
+					ID:      msg.ID,
+					Type:    models.MessageTypeUserMessage,
+					Payload: msg.Payload,
+				}
 			}
 
 			// Persist and dispatch through same pipeline as WS messages
-			switch baseMsg.Type {
-			case models.MessageTypeStartConversation, models.MessageTypeUserMessage:
-				if err := mp.messageHandler.PersistQueuedMessage(baseMsg); err != nil {
-					log.Error("📡 MessagePoller: Failed to persist queued message: %v", err)
-				}
-				mp.dispatcher.Dispatch(baseMsg)
-			default:
-				mp.dispatcher.Dispatch(baseMsg)
+			if err := mp.messageHandler.PersistQueuedMessage(baseMsg); err != nil {
+				log.Error("📡 MessagePoller: Failed to persist queued message: %v", err)
 			}
+			mp.dispatcher.Dispatch(baseMsg)
 
 			// Ack the message — failure is non-fatal, will be re-polled
 			if err := mp.apiClient.AckMessage(msg.ID); err != nil {
