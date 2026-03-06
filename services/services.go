@@ -40,14 +40,18 @@ type CLIAgent interface {
 	// ContinueConversationWithSystemPromptInDir continues an existing conversation with a system prompt in a specific directory
 	ContinueConversationWithSystemPromptInDir(sessionID, prompt, systemPrompt, workDir string) (*CLIAgentResult, error)
 
+	// StartNewConversationWithProgress starts a new conversation with progress streaming.
+	// Empty systemPrompt or workDir are ignored.
+	StartNewConversationWithProgress(prompt, systemPrompt, workDir string, emitter ProgressEmitter) (*CLIAgentResult, error)
+
+	// ContinueConversationWithProgress continues a conversation with progress streaming.
+	// Empty systemPrompt or workDir are ignored.
+	ContinueConversationWithProgress(sessionID, prompt, systemPrompt, workDir string, emitter ProgressEmitter) (*CLIAgentResult, error)
+
 	// CleanupOldLogs removes old log files based on age
 	CleanupOldLogs(maxAgeDays int) error
 
 	// AgentName returns the identifier for the concrete agent implementation
 	// (e.g., "claude" or "cursor") so callers can adapt behavior per agent
 	AgentName() string
-
-	// SetProgressEmitter sets a callback that is called for each progress event during CLI execution.
-	// The emitter is invoked in real-time as the CLI produces output lines.
-	SetProgressEmitter(emitter ProgressEmitter)
 }

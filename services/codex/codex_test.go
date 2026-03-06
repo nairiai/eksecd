@@ -194,7 +194,7 @@ func TestCodexService_StartNewConversationWithOptions(t *testing.T) {
 			service := NewCodexService(mockClient, tmpDir, tt.serviceModel)
 
 			// Execute
-			result, err := service.StartNewConversationWithOptions(tt.prompt, tt.options)
+			result, err := service.StartNewConversationWithOptions(tt.prompt, tt.options, nil)
 
 			// Verify error expectation
 			if tt.expectError && err == nil {
@@ -474,7 +474,7 @@ func TestCodexService_ContinueConversationWithOptions(t *testing.T) {
 			service := NewCodexService(mockClient, tmpDir, tt.serviceModel)
 
 			// Execute
-			result, err := service.ContinueConversationWithOptions(tt.threadID, tt.prompt, tt.options)
+			result, err := service.ContinueConversationWithOptions(tt.threadID, tt.prompt, tt.options, nil)
 
 			// Verify error expectation
 			if tt.expectError && err == nil {

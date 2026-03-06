@@ -45,14 +45,15 @@ func NewMessageSender(connectionState *ConnectionState, apiClient *clients.Agent
 	}
 }
 
-// Run starts the message sender goroutine that processes the queue.
-// Safe to call multiple times (e.g. on WS reconnect) — only the first call spawns the goroutine.
-// Subsequent calls update the socket client reference for the existing goroutine.
+// Run starts the message sender goroutines that process the queues.
+// Safe to call multiple times (e.g. on WS reconnect) — only the first call spawns goroutines.
+// Subsequent calls update the socket client reference for the existing goroutines.
 func (ms *MessageSender) Run(socketClient *socket.Socket) {
 	ms.SetSocketClient(socketClient)
 
 	ms.once.Do(func() {
 		go ms.processQueue()
+		go ms.runProgressSender()
 	})
 }
 
@@ -61,8 +62,6 @@ func (ms *MessageSender) SetSocketClient(socketClient *socket.Socket) {
 	ms.socketMu.Lock()
 	ms.socketClient = socketClient
 	ms.socketMu.Unlock()
-
-	go ms.runProgressSender()
 }
 
 // getSocketClient returns the current socket client reference (thread-safe).
