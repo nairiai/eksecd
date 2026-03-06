@@ -22,17 +22,7 @@ func MapCodexLineToProgress(line []byte) *models.AgentProgressPayload {
 	case "item.updated":
 		return mapCodexItem(line, "running")
 	case "turn.failed":
-		var msg struct {
-			Error string `json:"error"`
-		}
-		if err := json.Unmarshal(line, &msg); err != nil {
-			return nil
-		}
-		return &models.AgentProgressPayload{
-			ProgressType: models.ProgressTypeStep,
-			Summary:      fmt.Sprintf("Turn failed: %s", truncateCodex(msg.Error, 200)),
-			ToolStatus:   "error",
-		}
+		return mapCodexTurnFailed(line)
 	case "error":
 		var msg struct {
 			Message string `json:"message"`
@@ -188,6 +178,42 @@ func mapCodexItem(line []byte, defaultStatus string) *models.AgentProgressPayloa
 
 	default:
 		return nil
+	}
+}
+
+// mapCodexTurnFailed handles the turn.failed event where the error field
+// can be either a plain string or an object with a "message" field.
+func mapCodexTurnFailed(line []byte) *models.AgentProgressPayload {
+	// Try error as a string first
+	var strMsg struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(line, &strMsg); err == nil && strMsg.Error != "" {
+		return &models.AgentProgressPayload{
+			ProgressType: models.ProgressTypeStep,
+			Summary:      fmt.Sprintf("Turn failed: %s", truncateCodex(strMsg.Error, 200)),
+			ToolStatus:   "error",
+		}
+	}
+
+	// Try error as an object with a message field
+	var objMsg struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(line, &objMsg); err == nil && objMsg.Error.Message != "" {
+		return &models.AgentProgressPayload{
+			ProgressType: models.ProgressTypeStep,
+			Summary:      fmt.Sprintf("Turn failed: %s", truncateCodex(objMsg.Error.Message, 200)),
+			ToolStatus:   "error",
+		}
+	}
+
+	return &models.AgentProgressPayload{
+		ProgressType: models.ProgressTypeStep,
+		Summary:      "Turn failed",
+		ToolStatus:   "error",
 	}
 }
 

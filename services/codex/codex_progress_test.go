@@ -244,7 +244,7 @@ func TestMapCodexLineToProgress(t *testing.T) {
 			},
 		},
 		{
-			name: "turn.failed returns step error",
+			name: "turn.failed with string error returns step error",
 			input: `{
 				"type": "turn.failed",
 				"error": "Rate limit exceeded"
@@ -252,6 +252,29 @@ func TestMapCodexLineToProgress(t *testing.T) {
 			expected: &models.AgentProgressPayload{
 				ProgressType: models.ProgressTypeStep,
 				Summary:      "Turn failed: Rate limit exceeded",
+				ToolStatus:   "error",
+			},
+		},
+		{
+			name: "turn.failed with object error returns step error",
+			input: `{
+				"type": "turn.failed",
+				"error": {"message": "unexpected status 401 Unauthorized"}
+			}`,
+			expected: &models.AgentProgressPayload{
+				ProgressType: models.ProgressTypeStep,
+				Summary:      "Turn failed: unexpected status 401 Unauthorized",
+				ToolStatus:   "error",
+			},
+		},
+		{
+			name: "turn.failed with empty error returns generic message",
+			input: `{
+				"type": "turn.failed"
+			}`,
+			expected: &models.AgentProgressPayload{
+				ProgressType: models.ProgressTypeStep,
+				Summary:      "Turn failed",
 				ToolStatus:   "error",
 			},
 		},
