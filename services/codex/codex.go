@@ -95,7 +95,7 @@ func (c *CodexService) CleanupOldLogs(maxAgeDays int) error {
 }
 
 func (c *CodexService) StartNewConversation(prompt string) (*services.CLIAgentResult, error) {
-	return c.StartNewConversationWithOptions(prompt, nil)
+	return c.StartNewConversationWithOptions(prompt, nil, nil)
 }
 
 // deriveCodexOptions creates a final options struct, applying service model if set
@@ -119,12 +119,23 @@ func (c *CodexService) deriveCodexOptions(options *clients.CodexOptions) *client
 func (c *CodexService) StartNewConversationWithOptions(
 	prompt string,
 	options *clients.CodexOptions,
+	emitter services.ProgressEmitter,
 ) (*services.CLIAgentResult, error) {
 	log.Info("📋 Starting to start new Codex conversation")
 
 	finalOptions := c.deriveCodexOptions(options)
 
-	rawOutput, err := c.codexClient.StartNewSession(prompt, finalOptions)
+	// Create progress callback if emitter is set
+	var onLine clients.ProgressCallback
+	if emitter != nil {
+		onLine = func(line []byte) {
+			if progress := MapCodexLineToProgress(line); progress != nil {
+				emitter(*progress)
+			}
+		}
+	}
+
+	rawOutput, err := c.codexClient.StartNewSession(prompt, finalOptions, onLine)
 	if err != nil {
 		log.Error("Failed to start new Codex session: %v", err)
 		return nil, c.handleCodexClientError(err, "failed to start new Codex session")
@@ -174,7 +185,7 @@ func (c *CodexService) StartNewConversationWithSystemPrompt(
 		"# USER MESSAGE\n" +
 		prompt
 	log.Info("Prepending system prompt to user prompt with clear delimiters")
-	return c.StartNewConversationWithOptions(finalPrompt, nil)
+	return c.StartNewConversationWithOptions(finalPrompt, nil, nil)
 }
 
 func (c *CodexService) StartNewConversationWithDisallowedTools(
@@ -183,11 +194,11 @@ func (c *CodexService) StartNewConversationWithDisallowedTools(
 ) (*services.CLIAgentResult, error) {
 	// Codex doesn't have a disallowed tools option
 	// Return the conversation without this feature
-	return c.StartNewConversationWithOptions(prompt, nil)
+	return c.StartNewConversationWithOptions(prompt, nil, nil)
 }
 
 func (c *CodexService) ContinueConversation(sessionID, prompt string) (*services.CLIAgentResult, error) {
-	return c.ContinueConversationWithOptions(sessionID, prompt, nil)
+	return c.ContinueConversationWithOptions(sessionID, prompt, nil, nil)
 }
 
 func (c *CodexService) ContinueConversationWithSystemPrompt(sessionID, prompt, systemPrompt string) (*services.CLIAgentResult, error) {
@@ -226,12 +237,23 @@ func (c *CodexService) ContinueConversationInDir(sessionID, prompt, workDir stri
 func (c *CodexService) ContinueConversationWithOptions(
 	sessionID, prompt string,
 	options *clients.CodexOptions,
+	emitter services.ProgressEmitter,
 ) (*services.CLIAgentResult, error) {
 	log.Info("📋 Starting to continue Codex conversation: %s", sessionID)
 
 	finalOptions := c.deriveCodexOptions(options)
 
-	rawOutput, err := c.codexClient.ContinueSession(sessionID, prompt, finalOptions)
+	// Create progress callback if emitter is set
+	var onLine clients.ProgressCallback
+	if emitter != nil {
+		onLine = func(line []byte) {
+			if progress := MapCodexLineToProgress(line); progress != nil {
+				emitter(*progress)
+			}
+		}
+	}
+
+	rawOutput, err := c.codexClient.ContinueSession(sessionID, prompt, finalOptions, onLine)
 	if err != nil {
 		log.Error("Failed to continue Codex session: %v", err)
 		return nil, c.handleCodexClientError(err, "failed to continue Codex session")
@@ -302,6 +324,30 @@ func (c *CodexService) handleCodexClientError(err error, operation string) error
 	// No agent message found, return original error wrapped
 	log.Info("⚠️ No agent message found in Codex command output, returning original error")
 	return fmt.Errorf("%s: %w", operation, err)
+}
+
+// StartNewConversationWithProgress starts a new conversation with progress streaming.
+func (c *CodexService) StartNewConversationWithProgress(
+	prompt, systemPrompt, workDir string,
+	emitter services.ProgressEmitter,
+) (*services.CLIAgentResult, error) {
+	finalPrompt := prompt
+	if systemPrompt != "" {
+		finalPrompt = "# BEHAVIOR INSTRUCTIONS\n" +
+			systemPrompt + "\n\n" +
+			"# USER MESSAGE\n" +
+			prompt
+	}
+	return c.StartNewConversationWithOptions(finalPrompt, nil, emitter)
+}
+
+// ContinueConversationWithProgress continues a conversation with progress streaming.
+func (c *CodexService) ContinueConversationWithProgress(
+	sessionID, prompt, systemPrompt, workDir string,
+	emitter services.ProgressEmitter,
+) (*services.CLIAgentResult, error) {
+	// Codex: system prompt persists from turn 1, workDir not supported on continue
+	return c.ContinueConversationWithOptions(sessionID, prompt, nil, emitter)
 }
 
 // AgentName identifies this service implementation

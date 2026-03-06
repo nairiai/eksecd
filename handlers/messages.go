@@ -331,14 +331,23 @@ func (mh *MessageHandler) handleStartConversation(msg models.BaseMessage) error 
 	// Prepend sender metadata if available
 	finalPrompt = prependSenderMetadata(finalPrompt, payload.SenderMetadata)
 
-	// Start Claude session - use worktree directory if in worktree mode
+	// Start Claude session with progress streaming
+	progressEmitter := services.ProgressEmitter(func(progress models.AgentProgressPayload) {
+		progress.JobID = payload.JobID
+		progress.ProcessedMessageID = payload.ProcessedMessageID
+		progressMsg := models.BaseMessage{
+			ID:      core.NewID("prg"),
+			Type:    models.MessageTypeAgentProgress,
+			Payload: progress,
+		}
+		mh.messageSender.QueueProgressMessage("cc_message", progressMsg)
+	})
+
 	var claudeResult *services.CLIAgentResult
 	if worktreePath != "" {
 		log.Info("🌳 Starting Claude session in worktree: %s", worktreePath)
-		claudeResult, err = mh.claudeService.StartNewConversationWithSystemPromptInDir(finalPrompt, systemPrompt, worktreePath)
-	} else {
-		claudeResult, err = mh.claudeService.StartNewConversationWithSystemPrompt(finalPrompt, systemPrompt)
 	}
+	claudeResult, err = mh.claudeService.StartNewConversationWithProgress(finalPrompt, systemPrompt, worktreePath, progressEmitter)
 
 	if err != nil {
 		log.Info("❌ Error starting Claude session: %v", err)
@@ -680,22 +689,23 @@ func (mh *MessageHandler) handleUserMessage(msg models.BaseMessage) error {
 	}
 	outboundSystemPrompt := BuildOutboundAttachmentSystemPrompt(outboundAttachmentsDir)
 
-	// Continue Claude session - use worktree directory if in worktree mode
+	// Continue Claude session with progress streaming
+	progressEmitter := services.ProgressEmitter(func(progress models.AgentProgressPayload) {
+		progress.JobID = payload.JobID
+		progress.ProcessedMessageID = payload.ProcessedMessageID
+		progressMsg := models.BaseMessage{
+			ID:      core.NewID("prg"),
+			Type:    models.MessageTypeAgentProgress,
+			Payload: progress,
+		}
+		mh.messageSender.QueueProgressMessage("cc_message", progressMsg)
+	})
+
 	var claudeResult *services.CLIAgentResult
 	if jobData.WorktreePath != "" {
 		log.Info("🌳 Continuing Claude session in worktree: %s", jobData.WorktreePath)
-		if outboundSystemPrompt != "" {
-			claudeResult, err = mh.claudeService.ContinueConversationWithSystemPromptInDir(sessionID, finalPrompt, outboundSystemPrompt, jobData.WorktreePath)
-		} else {
-			claudeResult, err = mh.claudeService.ContinueConversationInDir(sessionID, finalPrompt, jobData.WorktreePath)
-		}
-	} else {
-		if outboundSystemPrompt != "" {
-			claudeResult, err = mh.claudeService.ContinueConversationWithSystemPrompt(sessionID, finalPrompt, outboundSystemPrompt)
-		} else {
-			claudeResult, err = mh.claudeService.ContinueConversation(sessionID, finalPrompt)
-		}
 	}
+	claudeResult, err = mh.claudeService.ContinueConversationWithProgress(sessionID, finalPrompt, outboundSystemPrompt, jobData.WorktreePath, progressEmitter)
 	if err != nil {
 		log.Info("❌ Error continuing Claude session: %v", err)
 		systemErr := mh.sendSystemMessage(

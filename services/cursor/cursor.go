@@ -301,6 +301,24 @@ func (c *CursorService) handleCursorClientError(err error, operation string) err
 	return fmt.Errorf("%s: %w", operation, err)
 }
 
+// StartNewConversationWithProgress starts a new conversation with progress streaming.
+// Note: Cursor doesn't support progress streaming; emitter is ignored.
+func (c *CursorService) StartNewConversationWithProgress(
+	prompt, systemPrompt, workDir string,
+	emitter services.ProgressEmitter,
+) (*services.CLIAgentResult, error) {
+	return c.StartNewConversationWithSystemPrompt(prompt, systemPrompt)
+}
+
+// ContinueConversationWithProgress continues a conversation with progress streaming.
+// Note: Cursor doesn't support progress streaming; emitter is ignored.
+func (c *CursorService) ContinueConversationWithProgress(
+	sessionID, prompt, systemPrompt, workDir string,
+	emitter services.ProgressEmitter,
+) (*services.CLIAgentResult, error) {
+	return c.ContinueConversation(sessionID, prompt)
+}
+
 // AgentName identifies this service implementation
 func (c *CursorService) AgentName() string {
 	return "cursor"

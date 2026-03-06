@@ -95,7 +95,7 @@ func (o *OpenCodeService) CleanupOldLogs(maxAgeDays int) error {
 }
 
 func (o *OpenCodeService) StartNewConversation(prompt string) (*services.CLIAgentResult, error) {
-	return o.StartNewConversationWithOptions(prompt, nil)
+	return o.StartNewConversationWithOptions(prompt, nil, nil)
 }
 
 // deriveOpenCodeOptions creates a final options struct, applying service model if set
@@ -125,12 +125,23 @@ func (o *OpenCodeService) deriveOpenCodeOptions(options *clients.OpenCodeOptions
 func (o *OpenCodeService) StartNewConversationWithOptions(
 	prompt string,
 	options *clients.OpenCodeOptions,
+	emitter services.ProgressEmitter,
 ) (*services.CLIAgentResult, error) {
 	log.Info("📋 Starting to start new OpenCode conversation")
 
 	finalOptions := o.deriveOpenCodeOptions(options)
 
-	rawOutput, err := o.openCodeClient.StartNewSession(prompt, finalOptions)
+	// Create progress callback if emitter is set
+	var onLine clients.ProgressCallback
+	if emitter != nil {
+		onLine = func(line []byte) {
+			if progress := MapOpenCodeLineToProgress(line); progress != nil {
+				emitter(*progress)
+			}
+		}
+	}
+
+	rawOutput, err := o.openCodeClient.StartNewSession(prompt, finalOptions, onLine)
 	if err != nil {
 		log.Error("Failed to start new OpenCode session: %v", err)
 		return nil, o.handleOpenCodeClientError(err, "failed to start new OpenCode session")
@@ -180,7 +191,7 @@ func (o *OpenCodeService) StartNewConversationWithSystemPrompt(
 		"# USER MESSAGE\n" +
 		prompt
 	log.Info("Prepending system prompt to user prompt with clear delimiters")
-	return o.StartNewConversationWithOptions(finalPrompt, nil)
+	return o.StartNewConversationWithOptions(finalPrompt, nil, nil)
 }
 
 func (o *OpenCodeService) StartNewConversationWithDisallowedTools(
@@ -189,11 +200,11 @@ func (o *OpenCodeService) StartNewConversationWithDisallowedTools(
 ) (*services.CLIAgentResult, error) {
 	// OpenCode doesn't have a disallowed tools option via CLI
 	log.Info("⚠️ OpenCode doesn't support disallowed tools via CLI")
-	return o.StartNewConversationWithOptions(prompt, nil)
+	return o.StartNewConversationWithOptions(prompt, nil, nil)
 }
 
 func (o *OpenCodeService) ContinueConversation(sessionID, prompt string) (*services.CLIAgentResult, error) {
-	return o.ContinueConversationWithOptions(sessionID, prompt, nil)
+	return o.ContinueConversationWithOptions(sessionID, prompt, nil, nil)
 }
 
 func (o *OpenCodeService) ContinueConversationWithSystemPrompt(sessionID, prompt, systemPrompt string) (*services.CLIAgentResult, error) {
@@ -205,7 +216,7 @@ func (o *OpenCodeService) ContinueConversationWithSystemPrompt(sessionID, prompt
 func (o *OpenCodeService) StartNewConversationInDir(prompt, workDir string) (*services.CLIAgentResult, error) {
 	return o.StartNewConversationWithOptions(prompt, &clients.OpenCodeOptions{
 		WorkDir: workDir,
-	})
+	}, nil)
 }
 
 // StartNewConversationWithSystemPromptInDir starts a new conversation with system prompt in a specific directory
@@ -221,7 +232,7 @@ func (o *OpenCodeService) StartNewConversationWithSystemPromptInDir(
 	log.Info("Prepending system prompt to user prompt with clear delimiters")
 	return o.StartNewConversationWithOptions(finalPrompt, &clients.OpenCodeOptions{
 		WorkDir: workDir,
-	})
+	}, nil)
 }
 
 func (o *OpenCodeService) ContinueConversationWithSystemPromptInDir(sessionID, prompt, systemPrompt, workDir string) (*services.CLIAgentResult, error) {
@@ -233,18 +244,29 @@ func (o *OpenCodeService) ContinueConversationWithSystemPromptInDir(sessionID, p
 func (o *OpenCodeService) ContinueConversationInDir(sessionID, prompt, workDir string) (*services.CLIAgentResult, error) {
 	return o.ContinueConversationWithOptions(sessionID, prompt, &clients.OpenCodeOptions{
 		WorkDir: workDir,
-	})
+	}, nil)
 }
 
 func (o *OpenCodeService) ContinueConversationWithOptions(
 	sessionID, prompt string,
 	options *clients.OpenCodeOptions,
+	emitter services.ProgressEmitter,
 ) (*services.CLIAgentResult, error) {
 	log.Info("📋 Starting to continue OpenCode conversation: %s", sessionID)
 
 	finalOptions := o.deriveOpenCodeOptions(options)
 
-	rawOutput, err := o.openCodeClient.ContinueSession(sessionID, prompt, finalOptions)
+	// Create progress callback if emitter is set
+	var onLine clients.ProgressCallback
+	if emitter != nil {
+		onLine = func(line []byte) {
+			if progress := MapOpenCodeLineToProgress(line); progress != nil {
+				emitter(*progress)
+			}
+		}
+	}
+
+	rawOutput, err := o.openCodeClient.ContinueSession(sessionID, prompt, finalOptions, onLine)
 	if err != nil {
 		log.Error("Failed to continue OpenCode session: %v", err)
 		return nil, o.handleOpenCodeClientError(err, "failed to continue OpenCode session")
@@ -315,6 +337,38 @@ func (o *OpenCodeService) handleOpenCodeClientError(err error, operation string)
 	// No result found, return original error wrapped
 	log.Info("⚠️ No result found in OpenCode command output, returning original error")
 	return fmt.Errorf("%s: %w", operation, err)
+}
+
+// StartNewConversationWithProgress starts a new conversation with progress streaming.
+func (o *OpenCodeService) StartNewConversationWithProgress(
+	prompt, systemPrompt, workDir string,
+	emitter services.ProgressEmitter,
+) (*services.CLIAgentResult, error) {
+	finalPrompt := prompt
+	if systemPrompt != "" {
+		finalPrompt = "# BEHAVIOR INSTRUCTIONS\n" +
+			systemPrompt + "\n\n" +
+			"# USER MESSAGE\n" +
+			prompt
+	}
+	var opts *clients.OpenCodeOptions
+	if workDir != "" {
+		opts = &clients.OpenCodeOptions{WorkDir: workDir}
+	}
+	return o.StartNewConversationWithOptions(finalPrompt, opts, emitter)
+}
+
+// ContinueConversationWithProgress continues a conversation with progress streaming.
+func (o *OpenCodeService) ContinueConversationWithProgress(
+	sessionID, prompt, systemPrompt, workDir string,
+	emitter services.ProgressEmitter,
+) (*services.CLIAgentResult, error) {
+	// OpenCode: system prompt persists from turn 1
+	var opts *clients.OpenCodeOptions
+	if workDir != "" {
+		opts = &clients.OpenCodeOptions{WorkDir: workDir}
+	}
+	return o.ContinueConversationWithOptions(sessionID, prompt, opts, emitter)
 }
 
 // AgentName identifies this service implementation

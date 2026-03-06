@@ -25,6 +25,7 @@ type OutgoingMessage struct {
 type MessageSender struct {
 	connectionState *ConnectionState
 	messageQueue    chan OutgoingMessage
+	progressQueue   chan OutgoingMessage
 	socketClient    *socket.Socket
 	socketMu        sync.RWMutex
 	apiClient       *clients.AgentsApiClient
@@ -38,19 +39,21 @@ func NewMessageSender(connectionState *ConnectionState, apiClient *clients.Agent
 	return &MessageSender{
 		connectionState: connectionState,
 		messageQueue:    make(chan OutgoingMessage, 1),
+		progressQueue:   make(chan OutgoingMessage, 1000),
 		socketClient:    nil, // Set later via Run()
 		apiClient:       apiClient,
 	}
 }
 
-// Run starts the message sender goroutine that processes the queue.
-// Safe to call multiple times (e.g. on WS reconnect) — only the first call spawns the goroutine.
-// Subsequent calls update the socket client reference for the existing goroutine.
+// Run starts the message sender goroutines that process the queues.
+// Safe to call multiple times (e.g. on WS reconnect) — only the first call spawns goroutines.
+// Subsequent calls update the socket client reference for the existing goroutines.
 func (ms *MessageSender) Run(socketClient *socket.Socket) {
 	ms.SetSocketClient(socketClient)
 
 	ms.once.Do(func() {
 		go ms.processQueue()
+		go ms.runProgressSender()
 	})
 }
 
@@ -162,6 +165,23 @@ func (ms *MessageSender) sendHTTPWithRetry(msg OutgoingMessage) {
 	}
 }
 
+// runProgressSender processes the progress queue in a separate goroutine.
+func (ms *MessageSender) runProgressSender() {
+	for msg := range ms.progressQueue {
+		ms.sendHTTPWithRetry(msg)
+	}
+}
+
+// QueueProgressMessage sends a progress message without blocking.
+// If the channel is full, the message is dropped (acceptable for progress).
+func (ms *MessageSender) QueueProgressMessage(event string, data any) {
+	select {
+	case ms.progressQueue <- OutgoingMessage{Event: event, Data: data}:
+	default:
+		log.Warn("⚠️ MessageSender: Progress queue full, dropping message")
+	}
+}
+
 // QueueMessage adds a message to the send queue.
 // Blocks until the message is consumed and sent by the MessageSender goroutine.
 // This ensures the caller knows the message has been processed before continuing.
@@ -178,4 +198,5 @@ func (ms *MessageSender) QueueMessage(event string, data any) {
 // Should be called during graceful shutdown.
 func (ms *MessageSender) Close() {
 	close(ms.messageQueue)
+	close(ms.progressQueue)
 }
