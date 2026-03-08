@@ -29,7 +29,7 @@ brew upgrade presmihaylov/taps/eksecd
 ### From Source
 You will need to have Go 1.24 installed:
 ```bash
-git clone https://github.com/presmihaylov/eksecd.git
+git clone https://github.com/nairiai/nairid.git
 cd eksecd
 make build
 ```
