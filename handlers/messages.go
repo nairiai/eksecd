@@ -532,16 +532,39 @@ func (mh *MessageHandler) handleUserMessage(msg models.BaseMessage) error {
 
 	// Get the current job data to retrieve the Claude session ID and branch
 	jobData, exists := mh.appState.GetJobData(payload.JobID)
-	if !exists {
-		log.Info("❌ JobID %s not found in AppState", payload.JobID)
-		return fmt.Errorf("job %s not found - conversation may have been started elsewhere", payload.JobID)
+	if !exists || jobData.ClaudeSessionID == "" {
+		// Job not in local state or has no session — this can happen after a WebSocket
+		// reconnect or container restart where local state was lost. Upgrade to
+		// start_conversation so the agent starts a fresh Claude session instead of failing.
+		if !exists {
+			log.Info("⚠️ JobID %s not found in AppState, upgrading to start_conversation", payload.JobID)
+		} else {
+			log.Info("⚠️ No Claude session ID for job %s, upgrading to start_conversation", payload.JobID)
+		}
+
+		startPayload := models.StartConversationPayload{
+			JobID:              payload.JobID,
+			Message:            payload.Message,
+			ProcessedMessageID: payload.ProcessedMessageID,
+			MessageLink:        payload.MessageLink,
+			Attachments:        payload.Attachments,
+			PreviousMessages:   payload.PreviousMessages,
+			SenderMetadata:     payload.SenderMetadata,
+		}
+		startPayloadBytes, marshalErr := json.Marshal(startPayload)
+		if marshalErr != nil {
+			return fmt.Errorf("failed to marshal start_conversation payload: %w", marshalErr)
+		}
+
+		startMsg := models.BaseMessage{
+			ID:      msg.ID,
+			Type:    models.MessageTypeStartConversation,
+			Payload: json.RawMessage(startPayloadBytes),
+		}
+		return mh.handleStartConversation(startMsg)
 	}
 
 	sessionID := jobData.ClaudeSessionID
-	if sessionID == "" {
-		log.Info("❌ No Claude session ID found for job %s", payload.JobID)
-		return fmt.Errorf("no active Claude session found for job %s", payload.JobID)
-	}
 
 	// Get repository context to check if we're in repo mode
 	repoContext := mh.appState.GetRepositoryContext()
