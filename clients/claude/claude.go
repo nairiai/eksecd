@@ -28,8 +28,10 @@ func (c *ClaudeClient) StartNewSession(prompt string, options *clients.ClaudeOpt
 	args = append(args,
 		"--verbose",
 		"--output-format", "stream-json",
-		"-p", prompt,
+		"-p",
 	)
+	promptArgs, promptStdin := clients.ApplyPrompt(prompt)
+	args = append(args, promptArgs...)
 
 	if options != nil {
 		if options.Model != "" {
@@ -51,6 +53,9 @@ func (c *ClaudeClient) StartNewSession(prompt string, options *clients.ClaudeOpt
 	defer cancel()
 
 	cmd := c.buildCommand(ctx, options, args)
+	if promptStdin != nil {
+		cmd.Stdin = promptStdin
+	}
 
 	log.Info("Running Claude command (timeout: %s)", clients.DefaultSessionTimeout)
 	result, err := clients.RunCommandStreaming(ctx, cmd, onLine)
@@ -70,8 +75,10 @@ func (c *ClaudeClient) ContinueSession(sessionID, prompt string, options *client
 		"--verbose",
 		"--output-format", "stream-json",
 		"--resume", sessionID,
-		"-p", prompt,
+		"-p",
 	)
+	promptArgs, promptStdin := clients.ApplyPrompt(prompt)
+	args = append(args, promptArgs...)
 
 	if options != nil {
 		if options.Model != "" {
@@ -93,6 +100,9 @@ func (c *ClaudeClient) ContinueSession(sessionID, prompt string, options *client
 	defer cancel()
 
 	cmd := c.buildCommand(ctx, options, args)
+	if promptStdin != nil {
+		cmd.Stdin = promptStdin
+	}
 
 	log.Info("Running Claude command (timeout: %s)", clients.DefaultSessionTimeout)
 	result, err := clients.RunCommandStreaming(ctx, cmd, onLine)
