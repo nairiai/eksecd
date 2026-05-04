@@ -1,3 +1,13 @@
+## [v0.0.106] - 2026-05-04
+
+### Bugfixes
+
+- Pipe agent prompt via stdin on Windows to avoid `cmd.exe` truncation ([#204](https://github.com/nairiai/nairid/pull/204))
+  - Fixes a Windows-only bug where Slack/Discord messages reached the Claude agent as empty content because `cmd.exe`'s batch-line interpreter truncated the `-p` argument at the first embedded newline
+  - The bug surfaced on every Slack/Discord message (the sender header `[Sender: ...]\n\n<msg>` made the prompt multi-line) and on any user message containing newlines (Shift+Enter, code blocks, multi-line questions)
+  - Introduces a build-tag-isolated `clients.ApplyPrompt` helper: on Unix, behaviour is byte-equivalent to before; on Windows, the prompt is delivered via `cmd.Stdin`, bypassing `cmd.exe`'s argument parsing entirely
+  - Linux and macOS binaries are unchanged in this code path
+
 ## [v0.0.105] - 2026-04-27
 
 ### Features
