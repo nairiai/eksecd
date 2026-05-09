@@ -489,10 +489,11 @@ func (p *WorktreePool) CleanupPool() error {
 	return nil
 }
 
-// CleanupStaleJobWorktrees scans the base path for j_* directories (job worktrees)
-// that have broken git references and removes them. This can happen when containers
-// are recreated - the volume preserves old job worktrees but the main repo's
-// .git/worktrees/ directory gets recreated fresh, breaking the git links.
+// CleanupStaleJobWorktrees scans the base path for job worktree directories
+// (j_* legacy and job_* current naming) that have broken git references and
+// removes them. This can happen when containers are recreated - the volume
+// preserves old job worktrees but the main repo's .git/worktrees/ directory
+// gets recreated fresh, breaking the git links.
 func (p *WorktreePool) CleanupStaleJobWorktrees() error {
 	log.Info("🔍 Scanning for stale job worktrees with broken git references")
 
@@ -515,8 +516,10 @@ func (p *WorktreePool) CleanupStaleJobWorktrees() error {
 			continue
 		}
 
-		// Only process j_* directories (job worktrees)
-		if !strings.HasPrefix(entry.Name(), "j_") {
+		// Only process job worktree directories. Both j_* (legacy) and job_*
+		// (current, post-rename) prefixes are accepted.
+		name := entry.Name()
+		if !strings.HasPrefix(name, "j_") && !strings.HasPrefix(name, "job_") {
 			continue
 		}
 

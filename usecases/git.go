@@ -1473,13 +1473,21 @@ func (g *GitUseCase) CleanupOrphanedWorktrees() error {
 		if !trackedWorktrees[worktreePath] {
 			log.Info("🗑️ Found orphaned worktree: %s", worktreePath)
 
-			// Remove the worktree
+			// Remove the worktree via git first
 			if err := g.gitClient.RemoveWorktree(worktreePath); err != nil {
-				log.Warn("⚠️ Failed to remove orphaned worktree %s: %v", worktreePath, err)
-				// Continue with other worktrees
-			} else {
-				orphanedCount++
+				// Fallback: when git can no longer reconcile the worktree (e.g. the bare
+				// repo's .git/worktrees/ has been wiped, or the worktree was never
+				// registered) git refuses to remove it. Drop the directory directly so
+				// the orphan doesn't accumulate on disk forever. Mirrors the pattern in
+				// cleanupFailedWorktree and CleanupStaleJobWorktrees.
+				log.Warn("⚠️ Failed to remove orphaned worktree via git %s: %v, falling back to os.RemoveAll", worktreePath, err)
+				if rmErr := os.RemoveAll(worktreePath); rmErr != nil {
+					log.Warn("⚠️ Failed to remove orphaned worktree directory %s: %v", worktreePath, rmErr)
+					// Continue with other worktrees
+					continue
+				}
 			}
+			orphanedCount++
 		}
 	}
 

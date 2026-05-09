@@ -612,6 +612,48 @@ func TestCleanupStaleJobWorktrees(t *testing.T) {
 	_ = gitClient.DeleteLocalBranch(branchName)
 }
 
+// TestCleanupStaleJobWorktrees_AcceptsJobPrefix verifies that the cleanup
+// scans both the legacy "j_*" and the current "job_*" prefixes. Without
+// support for "job_*", agents on the post-rename naming convention will
+// silently accumulate broken worktree directories on disk.
+func TestCleanupStaleJobWorktrees_AcceptsJobPrefix(t *testing.T) {
+	mainRepo, worktreeBase, cleanup := setupTestGitRepoWithRemote(t)
+	defer cleanup()
+
+	gitClient := clients.NewGitClient()
+	gitClient.SetRepoPathProvider(func() string { return mainRepo })
+
+	// Create a broken worktree using the current "job_" prefix (directory
+	// exists but .git points to a non-existent gitdir).
+	brokenJobPath := filepath.Join(worktreeBase, "job_01KQABCDEFGHJKMNPQRSTVWXYZ")
+	if err := os.MkdirAll(brokenJobPath, 0755); err != nil {
+		t.Fatalf("Failed to create broken job_ directory: %v", err)
+	}
+	gitFilePath := filepath.Join(brokenJobPath, ".git")
+	if err := os.WriteFile(gitFilePath, []byte("gitdir: /nonexistent/path/.git/worktrees/broken"), 0644); err != nil {
+		t.Fatalf("Failed to create broken .git file: %v", err)
+	}
+
+	// Also create an unrelated directory that should NOT be touched.
+	untouchedPath := filepath.Join(worktreeBase, "some-unrelated-dir")
+	if err := os.MkdirAll(untouchedPath, 0755); err != nil {
+		t.Fatalf("Failed to create unrelated dir: %v", err)
+	}
+
+	pool := NewWorktreePool(gitClient, worktreeBase, 3)
+
+	if err := pool.CleanupStaleJobWorktrees(); err != nil {
+		t.Fatalf("CleanupStaleJobWorktrees failed: %v", err)
+	}
+
+	if _, err := os.Stat(brokenJobPath); !os.IsNotExist(err) {
+		t.Error("Broken job_-prefixed worktree was not removed")
+	}
+	if _, err := os.Stat(untouchedPath); os.IsNotExist(err) {
+		t.Error("Unrelated directory was incorrectly removed")
+	}
+}
+
 func TestStartAndStop(t *testing.T) {
 	gitClient := clients.NewGitClient()
 	pool := NewWorktreePool(gitClient, "/tmp/nonexistent", 1)
