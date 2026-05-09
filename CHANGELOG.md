@@ -1,3 +1,12 @@
+## [v0.0.107] - 2026-05-09
+
+### Bugfixes
+
+- Drop orphan worktrees when git refuses, accept `job_` prefix ([#205](https://github.com/nairiai/nairid/pull/205))
+  - `CleanupOrphanedWorktrees` now falls back to `os.RemoveAll` when `git worktree remove --force` fails (e.g. when the bare repo's `.git/worktrees/` registry has been wiped or the worktree was never registered). Previously the function logged a warning and left the directory on disk; on every periodic cleanup tick the same orphan was re-discovered and re-skipped, causing tens of GB of orphan worktree directories to accumulate on long-lived agent containers
+  - `CleanupStaleJobWorktrees` now scans both the legacy `j_*` and the current `job_*` prefixes. Without `job_*` support, broken worktrees on the post-rename naming convention were silently skipped
+  - Adds three regression tests covering the fallback path, the kept-tracked path, and the new prefix support
+
 ## [v0.0.106] - 2026-05-04
 
 ### Bugfixes
