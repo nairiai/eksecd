@@ -1,3 +1,14 @@
+## [v0.0.109] - 2026-05-12
+
+### Bugfixes
+
+- Clean skills directory when zero skills are enabled ([#207](https://github.com/nairiai/nairid/pull/207))
+  - `ProcessSkills` returned early when no skill files were present, **before** wiping the agent-specific skills directory (e.g. `~/.claude/skills`)
+  - As a result, disabling the last skill on an agent left the previously extracted skills on disk and the agent kept loading them
+  - Moved the empty check to **after** the cleanup so the directory is always reset to a fresh, empty state regardless of how many skills are enabled. Same fix applied to the Claude Code, OpenCode, and Codex skill processors
+  - Partial unchecks (e.g. 5 → 4) already worked; this only affected the N → 0 case
+  - Added regression tests for all three processors that seed a stale skill and assert it is removed when no skills are enabled
+
 ## [v0.0.108] - 2026-05-12
 
 ### Bugfixes
