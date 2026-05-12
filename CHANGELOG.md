@@ -1,3 +1,15 @@
+## [v0.0.108] - 2026-05-12
+
+### Bugfixes
+
+- Update default CLI models for codex and opencode ([#206](https://github.com/nairiai/nairid/pull/206))
+  - The hardcoded daemon defaults pointed at models that no longer work in production
+  - Codex defaulted to `gpt-5`, which is not supported under ChatGPT-account OAuth (the auth mode used by production deployments) and fails with HTTP 400: `"The 'gpt-5' model is not supported when using Codex with a ChatGPT account."`
+  - OpenCode defaulted to `opencode/grok-code`, which is not in the OpenCode Zen catalog anymore
+  - Replaced with verified-working defaults: codex → `gpt-5.5`, opencode → `opencode/claude-sonnet-4-6`
+  - Inline comments in `validateModelForAgent` and README examples were updated to match
+  - Scope: only affects containers that run `nairid` without an explicit `--model` flag — containers that already receive `--model` from `deploy.sh` are unchanged. Claude/cursor defaults are untouched
+
 ## [v0.0.107] - 2026-05-09
 
 ### Bugfixes
