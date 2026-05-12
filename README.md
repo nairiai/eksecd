@@ -135,13 +135,13 @@ nairid --agent codex
 # Bypass permissions (Recommended in a secure sandbox environment only)
 nairid --agent codex --claude-bypass-permissions
 
-# Use specific model (default: gpt-5, accepts any model string)
-nairid --agent codex --model gpt-5
+# Use specific model (default: gpt-5.5, accepts any model string)
+nairid --agent codex --model gpt-5.5
 ```
 
 #### OpenCode Agent
 ```bash
-# OpenCode requires bypass permissions mode (default model: opencode/grok-code)
+# OpenCode requires bypass permissions mode (default model: opencode/claude-sonnet-4-6)
 nairid --agent opencode --claude-bypass-permissions
 
 # Use specific provider/model (format: provider/model)
