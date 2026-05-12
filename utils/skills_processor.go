@@ -291,11 +291,6 @@ func (p *ClaudeCodeSkillsProcessor) ProcessSkills(targetHomeDir string) error {
 		return fmt.Errorf("failed to get skill files: %w", err)
 	}
 
-	if len(skillFiles) == 0 {
-		log.Info("🎯 No skills found in eksecd skills directory")
-		return nil
-	}
-
 	log.Info("🎯 Found %d skill file(s) to process", len(skillFiles))
 
 	// Determine home directory for Claude Code skills
@@ -313,7 +308,9 @@ func (p *ClaudeCodeSkillsProcessor) ProcessSkills(targetHomeDir string) error {
 	// Target directory: ~/.claude/skills/
 	claudeSkillsDir := filepath.Join(homeDir, ".claude", "skills")
 
-	// Clean up existing skills directory to avoid stale skills
+	// Clean up existing skills directory to avoid stale skills.
+	// Must run even when skillFiles is empty so that skills disabled on the
+	// server (leaving zero skills enabled) are removed from the container.
 	log.Info("🎯 Cleaning Claude Code skills directory: %s", claudeSkillsDir)
 	if err := removeAllAsTargetUser(claudeSkillsDir); err != nil && !os.IsNotExist(err) {
 		log.Info("⚠️  Failed to remove existing skills directory: %v", err)
@@ -322,6 +319,11 @@ func (p *ClaudeCodeSkillsProcessor) ProcessSkills(targetHomeDir string) error {
 	// Create fresh skills directory
 	if err := mkdirAllAsTargetUser(claudeSkillsDir); err != nil {
 		return fmt.Errorf("failed to create Claude skills directory: %w", err)
+	}
+
+	if len(skillFiles) == 0 {
+		log.Info("🎯 No skills to extract; skills directory cleaned")
+		return nil
 	}
 
 	// Extract each skill ZIP to its own directory
@@ -375,11 +377,6 @@ func (p *OpenCodeSkillsProcessor) ProcessSkills(targetHomeDir string) error {
 		return fmt.Errorf("failed to get skill files: %w", err)
 	}
 
-	if len(skillFiles) == 0 {
-		log.Info("🎯 No skills found in eksecd skills directory")
-		return nil
-	}
-
 	log.Info("🎯 Found %d skill file(s) to process", len(skillFiles))
 
 	// Determine home directory for OpenCode skills
@@ -397,7 +394,9 @@ func (p *OpenCodeSkillsProcessor) ProcessSkills(targetHomeDir string) error {
 	// Target directory: ~/.config/opencode/skill/
 	opencodeSkillsDir := filepath.Join(homeDir, ".config", "opencode", "skill")
 
-	// Clean up existing skills directory to avoid stale skills
+	// Clean up existing skills directory to avoid stale skills.
+	// Must run even when skillFiles is empty so that skills disabled on the
+	// server (leaving zero skills enabled) are removed from the container.
 	log.Info("🎯 Cleaning OpenCode skills directory: %s", opencodeSkillsDir)
 	if err := removeAllAsTargetUser(opencodeSkillsDir); err != nil && !os.IsNotExist(err) {
 		log.Info("⚠️  Failed to remove existing skills directory: %v", err)
@@ -406,6 +405,11 @@ func (p *OpenCodeSkillsProcessor) ProcessSkills(targetHomeDir string) error {
 	// Create fresh skills directory with correct ownership
 	if err := mkdirAllAsTargetUser(opencodeSkillsDir); err != nil {
 		return fmt.Errorf("failed to create OpenCode skills directory: %w", err)
+	}
+
+	if len(skillFiles) == 0 {
+		log.Info("🎯 No skills to extract; skills directory cleaned")
+		return nil
 	}
 
 	// Extract each skill ZIP to its own directory
@@ -459,11 +463,6 @@ func (p *CodexSkillsProcessor) ProcessSkills(targetHomeDir string) error {
 		return fmt.Errorf("failed to get skill files: %w", err)
 	}
 
-	if len(skillFiles) == 0 {
-		log.Info("🎯 No skills found in eksecd skills directory")
-		return nil
-	}
-
 	log.Info("🎯 Found %d skill file(s) to process", len(skillFiles))
 
 	// Determine home directory for Codex skills
@@ -481,7 +480,9 @@ func (p *CodexSkillsProcessor) ProcessSkills(targetHomeDir string) error {
 	// Target directory: ~/.codex/skills/
 	codexSkillsDir := filepath.Join(homeDir, ".codex", "skills")
 
-	// Clean up existing skills directory to avoid stale skills
+	// Clean up existing skills directory to avoid stale skills.
+	// Must run even when skillFiles is empty so that skills disabled on the
+	// server (leaving zero skills enabled) are removed from the container.
 	log.Info("🎯 Cleaning Codex skills directory: %s", codexSkillsDir)
 	if err := removeAllAsTargetUser(codexSkillsDir); err != nil && !os.IsNotExist(err) {
 		log.Info("⚠️  Failed to remove existing skills directory: %v", err)
@@ -490,6 +491,11 @@ func (p *CodexSkillsProcessor) ProcessSkills(targetHomeDir string) error {
 	// Create fresh skills directory
 	if err := mkdirAllAsTargetUser(codexSkillsDir); err != nil {
 		return fmt.Errorf("failed to create Codex skills directory: %w", err)
+	}
+
+	if len(skillFiles) == 0 {
+		log.Info("🎯 No skills to extract; skills directory cleaned")
+		return nil
 	}
 
 	// Extract each skill ZIP to its own directory

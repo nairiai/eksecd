@@ -878,14 +878,94 @@ func TestCodexSkillsProcessor_NoSkills(t *testing.T) {
 	t.Setenv("HOME", tmpDir)
 	defer func() { _ = os.Setenv("HOME", originalHome) }()
 
+	// Pre-create a stale skill that should be wiped because no skills are enabled.
+	codexSkillsDir := filepath.Join(tmpDir, ".codex", "skills")
+	staleSkillDir := filepath.Join(codexSkillsDir, "stale-skill")
+	if err := os.MkdirAll(staleSkillDir, 0755); err != nil {
+		t.Fatalf("Failed to seed stale skill directory: %v", err)
+	}
+	stalePath := filepath.Join(staleSkillDir, "SKILL.md")
+	if err := os.WriteFile(stalePath, []byte("stale"), 0644); err != nil {
+		t.Fatalf("Failed to seed stale skill file: %v", err)
+	}
+
 	processor := NewCodexSkillsProcessor()
 	if err := processor.ProcessSkills(""); err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	codexSkillsDir := filepath.Join(tmpDir, ".codex", "skills")
-	if _, err := os.Stat(codexSkillsDir); !os.IsNotExist(err) {
-		t.Errorf("Expected skills directory not to exist when no skills")
+	// Skills directory should exist (freshly created) but be empty —
+	// any previously extracted skills must be removed.
+	entries, err := os.ReadDir(codexSkillsDir)
+	if err != nil {
+		t.Fatalf("Expected empty skills directory to exist, got error: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("Expected empty skills directory, but found %d entries", len(entries))
+	}
+}
+
+func TestClaudeCodeSkillsProcessor_NoSkills(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	originalHome := os.Getenv("HOME")
+	t.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", originalHome) }()
+
+	// Pre-create a stale skill that should be wiped because no skills are enabled.
+	claudeSkillsDir := filepath.Join(tmpDir, ".claude", "skills")
+	staleSkillDir := filepath.Join(claudeSkillsDir, "stale-skill")
+	if err := os.MkdirAll(staleSkillDir, 0755); err != nil {
+		t.Fatalf("Failed to seed stale skill directory: %v", err)
+	}
+	stalePath := filepath.Join(staleSkillDir, "SKILL.md")
+	if err := os.WriteFile(stalePath, []byte("stale"), 0644); err != nil {
+		t.Fatalf("Failed to seed stale skill file: %v", err)
+	}
+
+	processor := NewClaudeCodeSkillsProcessor()
+	if err := processor.ProcessSkills(""); err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	entries, err := os.ReadDir(claudeSkillsDir)
+	if err != nil {
+		t.Fatalf("Expected empty skills directory to exist, got error: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("Expected empty skills directory, but found %d entries", len(entries))
+	}
+}
+
+func TestOpenCodeSkillsProcessor_NoSkills(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	originalHome := os.Getenv("HOME")
+	t.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", originalHome) }()
+
+	// Pre-create a stale skill that should be wiped because no skills are enabled.
+	opencodeSkillsDir := filepath.Join(tmpDir, ".config", "opencode", "skill")
+	staleSkillDir := filepath.Join(opencodeSkillsDir, "stale-skill")
+	if err := os.MkdirAll(staleSkillDir, 0755); err != nil {
+		t.Fatalf("Failed to seed stale skill directory: %v", err)
+	}
+	stalePath := filepath.Join(staleSkillDir, "SKILL.md")
+	if err := os.WriteFile(stalePath, []byte("stale"), 0644); err != nil {
+		t.Fatalf("Failed to seed stale skill file: %v", err)
+	}
+
+	processor := NewOpenCodeSkillsProcessor()
+	if err := processor.ProcessSkills(""); err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	entries, err := os.ReadDir(opencodeSkillsDir)
+	if err != nil {
+		t.Fatalf("Expected empty skills directory to exist, got error: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("Expected empty skills directory, but found %d entries", len(entries))
 	}
 }
 
