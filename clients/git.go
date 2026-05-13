@@ -2,6 +2,7 @@ package clients
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,6 +14,13 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 )
+
+// ErrNoDefaultBranch is returned by GetDefaultBranch and GetDefaultBranchInWorktree
+// when the remote has no default branch (typically because the upstream repo is empty
+// with no commits — `git remote show origin` reports `HEAD branch: (unknown)` in that case).
+// Callers that perform staleness checks or refreshes should treat this as a no-op rather
+// than a failure, since an empty repo has no origin commits to compare against.
+var ErrNoDefaultBranch = errors.New("remote has no default branch (empty repo?)")
 
 type GitClient struct {
 	getRepoPath func() string // Function to get repository path (allows lazy evaluation)
@@ -490,6 +498,13 @@ func (g *GitClient) GetDefaultBranch() (string, error) {
 			}
 
 			branchName := strings.TrimSpace(parts[1])
+			// `git remote show origin` reports `HEAD branch: (unknown)` when the upstream
+			// repo has no commits yet. That's not a populated default branch, so signal
+			// it as ErrNoDefaultBranch and let callers skip work that needs an origin ref.
+			if branchName == "(unknown)" {
+				log.Info("📋 Remote has no default branch (upstream repo is empty)")
+				return "", ErrNoDefaultBranch
+			}
 			log.Info("✅ Default branch from remote: %s", branchName)
 			log.Info("📋 Completed successfully - got default branch from remote")
 			return branchName, nil
@@ -1798,6 +1813,10 @@ func (g *GitClient) GetDefaultBranchInWorktree(worktreePath string) (string, err
 			}
 
 			branchName := strings.TrimSpace(parts[1])
+			if branchName == "(unknown)" {
+				log.Info("📋 Remote has no default branch from worktree (upstream repo is empty)")
+				return "", ErrNoDefaultBranch
+			}
 			log.Info("✅ Default branch from worktree: %s", branchName)
 			return branchName, nil
 		}

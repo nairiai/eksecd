@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -716,5 +717,119 @@ func TestWorktreeGitOperations(t *testing.T) {
 	}
 	if !hasChanges {
 		t.Error("Expected uncommitted changes after modifying file")
+	}
+}
+// setupTestRepoWithEmptyRemote creates a local clone of a bare empty remote.
+// The remote is a `git init --bare` with no commits, so `git remote show origin`
+// from the local clone reports `HEAD branch: (unknown)`.
+// Returns the local repo path and a cleanup function.
+func setupTestRepoWithEmptyRemote(t *testing.T) (string, func()) {
+	t.Helper()
+
+	tmpDir, err := os.MkdirTemp("", "git-empty-remote-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+
+	remoteDir := filepath.Join(tmpDir, "remote.git")
+	localDir := filepath.Join(tmpDir, "local")
+
+	cmd := exec.Command("git", "init", "--bare", remoteDir)
+	if err := cmd.Run(); err != nil {
+		_ = os.RemoveAll(tmpDir)
+		t.Fatalf("Failed to init bare remote: %v", err)
+	}
+
+	cmd = exec.Command("git", "clone", remoteDir, localDir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		_ = os.RemoveAll(tmpDir)
+		t.Fatalf("Failed to clone empty remote: %v\nOutput: %s", err, string(out))
+	}
+
+	cleanup := func() {
+		_ = os.RemoveAll(tmpDir)
+	}
+
+	return localDir, cleanup
+}
+
+func TestGetDefaultBranch_EmptyRemote(t *testing.T) {
+	repoPath, cleanup := setupTestRepoWithEmptyRemote(t)
+	defer cleanup()
+
+	client := NewGitClient()
+	client.SetRepoPathProvider(func() string { return repoPath })
+
+	_, err := client.GetDefaultBranch()
+	if err == nil {
+		t.Fatal("Expected error from GetDefaultBranch on empty remote, got nil")
+	}
+	if !errors.Is(err, ErrNoDefaultBranch) {
+		t.Errorf("Expected ErrNoDefaultBranch, got: %v", err)
+	}
+}
+
+func TestGetDefaultBranch_PopulatedRemote(t *testing.T) {
+	// Regression: make sure the empty-remote branch did not accidentally
+	// trigger ErrNoDefaultBranch for repos that DO have a default branch.
+	repoPath, cleanup := setupTestRepoWithEmptyRemote(t)
+	defer cleanup()
+
+	// Promote the empty remote to a populated one: create a commit on the local
+	// clone, push it to origin, then `git remote set-head origin --auto` so the
+	// remote tracks a real default branch.
+	configCmds := [][]string{
+		{"git", "config", "user.email", "test@example.com"},
+		{"git", "config", "user.name", "Test User"},
+	}
+	for _, args := range configCmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = repoPath
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("Failed to configure git: %v", err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(repoPath, "README.md"), []byte("# Test\n"), 0644); err != nil {
+		t.Fatalf("Failed to write README: %v", err)
+	}
+	for _, args := range [][]string{
+		{"git", "add", "README.md"},
+		{"git", "commit", "-m", "init"},
+		{"git", "push", "-u", "origin", "HEAD"},
+		{"git", "remote", "set-head", "origin", "--auto"},
+	} {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = repoPath
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("Failed to run %v: %v\nOutput: %s", args, err, string(out))
+		}
+	}
+
+	client := NewGitClient()
+	client.SetRepoPathProvider(func() string { return repoPath })
+
+	branch, err := client.GetDefaultBranch()
+	if err != nil {
+		t.Fatalf("Expected GetDefaultBranch to succeed on populated remote, got: %v", err)
+	}
+	if branch == "" || branch == "(unknown)" {
+		t.Errorf("Expected a real branch name, got %q", branch)
+	}
+}
+
+func TestGetDefaultBranchInWorktree_EmptyRemote(t *testing.T) {
+	// The worktree variant has the same `HEAD branch: (unknown)` parsing path
+	// and must also surface ErrNoDefaultBranch for empty upstreams.
+	repoPath, cleanup := setupTestRepoWithEmptyRemote(t)
+	defer cleanup()
+
+	client := NewGitClient()
+
+	_, err := client.GetDefaultBranchInWorktree(repoPath)
+	if err == nil {
+		t.Fatal("Expected error from GetDefaultBranchInWorktree on empty remote, got nil")
+	}
+	if !errors.Is(err, ErrNoDefaultBranch) {
+		t.Errorf("Expected ErrNoDefaultBranch, got: %v", err)
 	}
 }

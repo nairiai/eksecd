@@ -836,3 +836,95 @@ func TestReplenish_ResetsMainRepoBeforeCreatingWorktree(t *testing.T) {
 	pool.Stop()
 	_ = pool.CleanupPool()
 }
+// setupTestRepoEmptyRemote creates a local repo cloned from a bare empty remote.
+// Mirrors setupTestGitRepoWithRemote but stops short of creating any commits,
+// so `git remote show origin` reports `HEAD branch: (unknown)`.
+func setupTestRepoEmptyRemote(t *testing.T) (mainRepo string, worktreeBase string, cleanup func()) {
+	t.Helper()
+
+	remoteDir, err := os.MkdirTemp("", "git-empty-remote-*")
+	if err != nil {
+		t.Fatalf("Failed to create remote temp dir: %v", err)
+	}
+	cmd := exec.Command("git", "init", "--bare")
+	cmd.Dir = remoteDir
+	if err := cmd.Run(); err != nil {
+		_ = os.RemoveAll(remoteDir)
+		t.Fatalf("Failed to init bare remote: %v", err)
+	}
+
+	mainRepoDir, err := os.MkdirTemp("", "git-empty-main-*")
+	if err != nil {
+		_ = os.RemoveAll(remoteDir)
+		t.Fatalf("Failed to create main temp dir: %v", err)
+	}
+	cmd = exec.Command("git", "clone", remoteDir, mainRepoDir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		_ = os.RemoveAll(remoteDir)
+		_ = os.RemoveAll(mainRepoDir)
+		t.Fatalf("Failed to clone empty remote: %v\nOutput: %s", err, string(out))
+	}
+
+	worktreeBaseDir, err := os.MkdirTemp("", "worktree-empty-base-*")
+	if err != nil {
+		_ = os.RemoveAll(remoteDir)
+		_ = os.RemoveAll(mainRepoDir)
+		t.Fatalf("Failed to create worktree base dir: %v", err)
+	}
+
+	cleanup = func() {
+		_ = os.RemoveAll(remoteDir)
+		_ = os.RemoveAll(mainRepoDir)
+		_ = os.RemoveAll(worktreeBaseDir)
+	}
+
+	return mainRepoDir, worktreeBaseDir, cleanup
+}
+
+// When the upstream repo has no commits, replenish must surface ErrNoDefaultBranch
+// (wrapped) so fillToTarget can back off without spamming error logs every cycle.
+// This is the path that previously produced "git rev-parse origin/(unknown)" spam
+// from a long-lived agent container pointed at an empty repo.
+func TestReplenish_EmptyRemote_PropagatesErrNoDefaultBranch(t *testing.T) {
+	mainRepo, worktreeBase, cleanup := setupTestRepoEmptyRemote(t)
+	defer cleanup()
+
+	gitClient := clients.NewGitClient()
+	gitClient.SetRepoPathProvider(func() string { return mainRepo })
+
+	pool := NewWorktreePool(gitClient, worktreeBase, 1)
+
+	err := pool.replenish()
+	if err == nil {
+		t.Fatal("Expected replenish to return an error on empty remote, got nil")
+	}
+	if !errors.Is(err, clients.ErrNoDefaultBranch) {
+		t.Errorf("Expected replenish error to wrap ErrNoDefaultBranch, got: %v", err)
+	}
+}
+
+// getCurrentOriginCommit must surface ErrNoDefaultBranch directly so callers
+// can branch on it (info-log + skip vs warn). refreshStaleWorktrees must not
+// crash for empty repos either.
+func TestGetCurrentOriginCommit_EmptyRemote(t *testing.T) {
+	mainRepo, worktreeBase, cleanup := setupTestRepoEmptyRemote(t)
+	defer cleanup()
+
+	gitClient := clients.NewGitClient()
+	gitClient.SetRepoPathProvider(func() string { return mainRepo })
+
+	pool := NewWorktreePool(gitClient, worktreeBase, 1)
+
+	_, err := pool.getCurrentOriginCommit()
+	if err == nil {
+		t.Fatal("Expected getCurrentOriginCommit to return an error on empty remote, got nil")
+	}
+	if !errors.Is(err, clients.ErrNoDefaultBranch) {
+		t.Errorf("Expected getCurrentOriginCommit error to be ErrNoDefaultBranch, got: %v", err)
+	}
+
+	// refreshStaleWorktrees must not panic on an empty repo. The pool is empty,
+	// so this is mainly a regression check that the (unknown) default-branch path
+	// no longer crashes or spams warnings.
+	pool.refreshStaleWorktrees()
+}

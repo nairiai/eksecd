@@ -156,7 +156,12 @@ func (p *WorktreePool) Acquire(jobID, branchName string) (string, error) {
 	// Check staleness and refresh if needed
 	currentCommit, err := p.getCurrentOriginCommit()
 	if err != nil {
-		log.Warn("⚠️ Failed to get current origin commit for staleness check: %v", err)
+		if errors.Is(err, clients.ErrNoDefaultBranch) {
+			// Upstream is an empty repo — nothing to compare against, skip cleanly.
+			log.Info("📋 Skipping staleness check: upstream repo has no default branch (empty repo)")
+		} else {
+			log.Warn("⚠️ Failed to get current origin commit for staleness check: %v", err)
+		}
 	} else if pooledWT.BaseCommit != currentCommit {
 		log.Info("🔄 Worktree %s is stale, refreshing...", pooledWT.Path)
 		if err := p.refreshWorktreeAfterFetch(pooledWT.Path); err != nil {
@@ -258,7 +263,11 @@ func (p *WorktreePool) fillToTarget(ctx context.Context) {
 		}
 
 		if err := p.replenish(); err != nil {
-			log.Error("❌ Worktree pool: failed to replenish: %v", err)
+			if errors.Is(err, clients.ErrNoDefaultBranch) {
+				log.Info("📋 Worktree pool: upstream repo has no default branch (empty repo) — deferring pool fill")
+			} else {
+				log.Error("❌ Worktree pool: failed to replenish: %v", err)
+			}
 			return // back off on errors
 		}
 	}
@@ -371,7 +380,11 @@ func (p *WorktreePool) refreshStaleWorktrees() {
 
 	currentCommit, err := p.getCurrentOriginCommit()
 	if err != nil {
-		log.Warn("⚠️ Failed to get current origin commit for staleness check: %v", err)
+		if errors.Is(err, clients.ErrNoDefaultBranch) {
+			log.Info("📋 Skipping periodic staleness check: upstream repo has no default branch (empty repo)")
+		} else {
+			log.Warn("⚠️ Failed to get current origin commit for staleness check: %v", err)
+		}
 		return
 	}
 
