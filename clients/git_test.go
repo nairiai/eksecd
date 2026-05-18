@@ -718,3 +718,142 @@ func TestWorktreeGitOperations(t *testing.T) {
 		t.Error("Expected uncommitted changes after modifying file")
 	}
 }
+
+
+// setupTestGitRepoWithBareOrigin creates a working clone of a bare origin repo
+// for testing FetchOrigin behavior. Returns the clone path, a helper to run
+// commands inside the bare origin, and a cleanup function.
+func setupTestGitRepoWithBareOrigin(t *testing.T) (clonePath string, originGit func(args ...string) (string, error), cleanup func()) {
+	t.Helper()
+
+	originDir, err := os.MkdirTemp("", "git-origin-bare-*")
+	if err != nil {
+		t.Fatalf("Failed to create origin temp dir: %v", err)
+	}
+
+	if out, err := exec.Command("git", "init", "--bare", "--initial-branch=main", originDir).CombinedOutput(); err != nil {
+		_ = os.RemoveAll(originDir)
+		t.Fatalf("Failed to init bare origin: %v\nOutput: %s", err, string(out))
+	}
+
+	// Seed the bare origin with an initial commit on main via a throwaway clone.
+	seedDir, err := os.MkdirTemp("", "git-seed-*")
+	if err != nil {
+		_ = os.RemoveAll(originDir)
+		t.Fatalf("Failed to create seed temp dir: %v", err)
+	}
+	runIn := func(dir string, args ...string) error {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("git %s in %s: %w\n%s", strings.Join(args, " "), dir, err, string(out))
+		}
+		return nil
+	}
+	if err := runIn("", "clone", originDir, seedDir); err != nil {
+		_ = os.RemoveAll(originDir)
+		_ = os.RemoveAll(seedDir)
+		t.Fatalf("Failed to seed clone: %v", err)
+	}
+	for _, args := range [][]string{
+		{"config", "user.email", "test@example.com"},
+		{"config", "user.name", "Test User"},
+		{"checkout", "-b", "main"},
+		{"commit", "--allow-empty", "-m", "initial"},
+		{"push", "-u", "origin", "main"},
+	} {
+		if err := runIn(seedDir, args...); err != nil {
+			_ = os.RemoveAll(originDir)
+			_ = os.RemoveAll(seedDir)
+			t.Fatalf("Seed setup failed: %v", err)
+		}
+	}
+	_ = os.RemoveAll(seedDir)
+
+	cloneDir, err := os.MkdirTemp("", "git-clone-*")
+	if err != nil {
+		_ = os.RemoveAll(originDir)
+		t.Fatalf("Failed to create clone temp dir: %v", err)
+	}
+	if err := runIn("", "clone", originDir, cloneDir); err != nil {
+		_ = os.RemoveAll(originDir)
+		_ = os.RemoveAll(cloneDir)
+		t.Fatalf("Failed to clone: %v", err)
+	}
+	for _, args := range [][]string{
+		{"config", "user.email", "test@example.com"},
+		{"config", "user.name", "Test User"},
+	} {
+		if err := runIn(cloneDir, args...); err != nil {
+			_ = os.RemoveAll(originDir)
+			_ = os.RemoveAll(cloneDir)
+			t.Fatalf("Clone config failed: %v", err)
+		}
+	}
+
+	originGit = func(args ...string) (string, error) {
+		full := append([]string{"--git-dir=" + originDir}, args...)
+		cmd := exec.Command("git", full...)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+
+	cleanup = func() {
+		_ = os.RemoveAll(cloneDir)
+		_ = os.RemoveAll(originDir)
+	}
+
+	return cloneDir, originGit, cleanup
+}
+
+// TestFetchOrigin_PrunesStaleRefsOnDFConflict reproduces the production bug
+// where a stale local remote-tracking ref blocks fetching a new nested branch
+// under the same path. Without --prune, git refuses the fetch with
+// "unable to update local ref" because it cannot have both a file and a
+// directory at the same path under refs/remotes/origin. With --prune, the
+// stale parent ref is removed before the nested ref is written.
+func TestFetchOrigin_PrunesStaleRefsOnDFConflict(t *testing.T) {
+	clonePath, originGit, cleanup := setupTestGitRepoWithBareOrigin(t)
+	defer cleanup()
+
+	mainSHAOut, err := originGit("rev-parse", "refs/heads/main")
+	if err != nil {
+		t.Fatalf("Failed to get main SHA on origin: %v", err)
+	}
+	mainSHA := strings.TrimSpace(mainSHAOut)
+
+	if _, err := originGit("update-ref", "refs/heads/mark-flaky", mainSHA); err != nil {
+		t.Fatalf("Failed to create mark-flaky on origin: %v", err)
+	}
+
+	client := NewGitClient()
+	client.SetRepoPathProvider(func() string { return clonePath })
+
+	if err := client.FetchOrigin(); err != nil {
+		t.Fatalf("Initial fetch should succeed: %v", err)
+	}
+
+	if out, err := exec.Command("git", "-C", clonePath, "rev-parse", "refs/remotes/origin/mark-flaky").CombinedOutput(); err != nil {
+		t.Fatalf("Expected refs/remotes/origin/mark-flaky to exist after first fetch, got error: %v\n%s", err, string(out))
+	}
+
+	if _, err := originGit("update-ref", "-d", "refs/heads/mark-flaky"); err != nil {
+		t.Fatalf("Failed to delete mark-flaky on origin: %v", err)
+	}
+	if _, err := originGit("update-ref", "refs/heads/mark-flaky/customer-book-and-repeat", mainSHA); err != nil {
+		t.Fatalf("Failed to create nested branch on origin: %v", err)
+	}
+
+	if err := client.FetchOrigin(); err != nil {
+		t.Fatalf("FetchOrigin should prune stale parent ref and succeed, got: %v", err)
+	}
+
+	if out, err := exec.Command("git", "-C", clonePath, "rev-parse", "refs/remotes/origin/mark-flaky").CombinedOutput(); err == nil {
+		t.Errorf("Expected stale refs/remotes/origin/mark-flaky to be pruned, but rev-parse succeeded: %s", string(out))
+	}
+
+	if out, err := exec.Command("git", "-C", clonePath, "rev-parse", "refs/remotes/origin/mark-flaky/customer-book-and-repeat").CombinedOutput(); err != nil {
+		t.Fatalf("Expected nested ref to be fetched, got error: %v\n%s", err, string(out))
+	}
+}
