@@ -1,3 +1,13 @@
+## [v0.0.110] - 2026-05-19
+
+### Bugfixes
+
+- Prune stale refs on git fetch to recover from D/F conflicts ([#209](https://github.com/nairiai/nairid/pull/209))
+  - `FetchOrigin` now runs `git fetch --prune origin` instead of plain `git fetch origin`, so any stale `refs/remotes/origin/*` whose upstream branch has been deleted are removed automatically during the fetch
+  - Fixes a class of failure where renaming a branch upstream from `foo` to `foo/bar/baz` left the old `foo` ref on disk as a loose file, blocking creation of the new nested ref with a classic git directory/file (D/F) conflict (`unable to update local ref`). The error surfaced inside the worktree pool replenisher and inside synchronous `prepare Git environment` paths, which meant **every new conversation on the affected agent failed** until someone manually ran `git remote prune origin` inside the container
+  - Added a regression test `TestFetchOrigin_PrunesStaleRefsOnDFConflict` that wires up a bare upstream, simulates the exact rename pattern that produced the production failure, and verifies recovery. The test fails (with the same production error message) when the fix is reverted
+  - Operational impact: containers running pre-0.0.110 binaries that already have a stale leaf ref colliding with a new nested upstream branch will continue to require a one-time `git remote prune origin` inside the affected repo. Once on 0.0.110, the prune happens automatically on every fetch and the failure cannot recur
+
 ## [v0.0.109] - 2026-05-12
 
 ### Bugfixes
