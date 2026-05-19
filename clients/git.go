@@ -1229,9 +1229,16 @@ func (g *GitClient) UpdateRemoteURLWithToken(token string) error {
 
 // FetchOrigin fetches updates from the origin remote.
 // This is safe for concurrent calls as it only updates remote tracking refs.
+//
+// --prune is required: without it, a stale local remote-tracking ref for an
+// upstream branch that has since been deleted (e.g. "foo") will block any
+// future fetch of a new nested branch under the same name ("foo/bar"). Git
+// cannot have a file and a directory at the same path under refs/remotes/origin,
+// and the fetch fails with "unable to update local ref". Pruning removes the
+// stale parent ref before writing the nested one.
 func (g *GitClient) FetchOrigin() error {
 	log.Info("📋 Starting to fetch from origin")
-	cmd := exec.Command("git", "fetch", "origin")
+	cmd := exec.Command("git", "fetch", "--prune", "origin")
 	g.setWorkDir(cmd)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
