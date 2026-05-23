@@ -199,6 +199,7 @@ func (c *ClaudeService) StartNewConversationWithOptions(
 	result := &services.CLIAgentResult{
 		Output:    output,
 		SessionID: sessionID,
+		Usage:     extractClaudeUsage(messages),
 	}
 
 	log.Info("📋 Completed successfully - started new Claude conversation with session: %s", sessionID)
@@ -332,6 +333,7 @@ func (c *ClaudeService) ContinueConversationWithOptions(
 	result := &services.CLIAgentResult{
 		Output:    output,
 		SessionID: actualSessionID,
+		Usage:     extractClaudeUsage(messages),
 	}
 
 	log.Info("📋 Completed successfully - continued Claude conversation with session: %s", actualSessionID)

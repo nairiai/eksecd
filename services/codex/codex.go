@@ -169,10 +169,21 @@ func (c *CodexService) StartNewConversationWithOptions(
 	result := &services.CLIAgentResult{
 		Output:    output,
 		SessionID: threadID,
+		Usage:     extractCodexUsage(messages, c.effectiveModel(finalOptions)),
 	}
 
 	log.Info("📋 Completed successfully - started new Codex conversation with thread: %s", threadID)
 	return result, nil
+}
+
+// effectiveModel returns the model id used for the just-completed Codex
+// session, preferring the per-call options override and falling back to
+// the service-level default. Returns empty string if neither is set.
+func (c *CodexService) effectiveModel(opts *clients.CodexOptions) string {
+	if opts != nil && opts.Model != "" {
+		return opts.Model
+	}
+	return c.model
 }
 
 func (c *CodexService) StartNewConversationWithSystemPrompt(
@@ -287,6 +298,7 @@ func (c *CodexService) ContinueConversationWithOptions(
 	result := &services.CLIAgentResult{
 		Output:    output,
 		SessionID: actualThreadID,
+		Usage:     extractCodexUsage(messages, c.effectiveModel(finalOptions)),
 	}
 
 	log.Info("📋 Completed successfully - continued Codex conversation with thread: %s", actualThreadID)

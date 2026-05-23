@@ -444,6 +444,7 @@ func (mh *MessageHandler) handleStartConversation(msg models.BaseMessage) error 
 		ProcessedMessageID: payload.ProcessedMessageID,
 		AttachmentIDs:      attachmentIDs,
 	}
+	applyUsageToAssistantPayload(&assistantPayload, claudeResult.Usage)
 
 	assistantMsg := models.BaseMessage{
 		ID:      core.NewID("msg"),
@@ -835,6 +836,7 @@ func (mh *MessageHandler) handleUserMessage(msg models.BaseMessage) error {
 		ProcessedMessageID: payload.ProcessedMessageID,
 		AttachmentIDs:      outboundAttachmentIDs,
 	}
+	applyUsageToAssistantPayload(&assistantPayload, claudeResult.Usage)
 
 	assistantMsg := models.BaseMessage{
 		ID:      core.NewID("msg"),
