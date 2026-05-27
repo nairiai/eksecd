@@ -1,3 +1,17 @@
+## [v0.0.111] - 2026-05-27
+
+### Features
+
+- Emit per-message cost on assistant messages ([#210](https://github.com/nairiai/nairid/pull/210))
+  - Each CLI harness now extracts cost and token usage after a conversation turn finishes and attaches it to the outgoing `assistant_message_v1` payload, so the backend can persist `cost_usd`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, and `model` on every `conversation_messages` row
+  - Per-harness behaviour:
+    - **Claude**: `total_cost_usd` comes from the final `result` event; tokens are taken from the result's `usage` rollup when present, else summed across per-`assistant`-event usage blocks
+    - **Codex**: input / cached / output tokens summed across `turn.completed` events; cost is computed via a local pricing table in `services/pricing/codex.go` keyed by model id (kept in nairid so pricing updates ship with nairid and the backend stays a dumb persistence layer)
+    - **OpenCode**: shells out to `opencode db --format json` after the subprocess exits to query the local SQLite database for assistant messages created during this run, then sums cost and tokens. Best-effort: on any failure the message is sent with NULL cost columns and the turn does not fail
+    - **Cursor**: emits nothing; leaves all cost fields nil
+  - Wire change is backward compatible — all new cost fields are `omitempty`, so a backend without the matching schema columns will ignore them. Depends on `presmihaylov/claudecontrol#938` which adds the columns and API surface
+  - Pricing-table caveat: the Codex pricing in `services/pricing/codex.go` reflects public OpenAI pricing as of 2026-05; future price changes require a nairid release
+
 ## [v0.0.110] - 2026-05-19
 
 ### Bugfixes
