@@ -86,8 +86,8 @@ func TestFetchOpenCodeUsage_SingleRow(t *testing.T) {
 	if got.CacheWriteTokens == nil || *got.CacheWriteTokens != 12 {
 		t.Fatalf("CacheWriteTokens = %v, want 12", got.CacheWriteTokens)
 	}
-	if got.Model != "gpt-5.3-codex" {
-		t.Fatalf("Model = %q, want gpt-5.3-codex", got.Model)
+	if got.Model == nil || *got.Model != "gpt-5.3-codex" {
+		t.Fatalf("Model = %v, want gpt-5.3-codex", got.Model)
 	}
 }
 
@@ -125,8 +125,8 @@ func TestFetchOpenCodeUsage_MultiRowSumsCorrectly(t *testing.T) {
 	if *got.CacheWriteTokens != 10 {
 		t.Fatalf("CacheWriteTokens sum = %v, want 10", *got.CacheWriteTokens)
 	}
-	if got.Model != "kimi-k2.6" {
-		t.Fatalf("Model = %q, want kimi-k2.6 (latest row)", got.Model)
+	if got.Model == nil || *got.Model != "kimi-k2.6" {
+		t.Fatalf("Model = %v, want kimi-k2.6 (latest row)", got.Model)
 	}
 }
 

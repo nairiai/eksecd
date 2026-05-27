@@ -159,7 +159,11 @@ func fetchOpenCodeUsage(
 		return nil
 	}
 
-	usage := &services.CLIAgentUsage{Model: latestModel}
+	usage := &services.CLIAgentUsage{}
+	if latestModel != "" {
+		m := latestModel
+		usage.Model = &m
+	}
 	if hasCost {
 		c := totalCost
 		usage.CostUSD = &c

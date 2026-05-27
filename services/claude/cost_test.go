@@ -66,8 +66,8 @@ func TestExtractClaudeUsage_AssistantOnly_SumsAcrossCalls(t *testing.T) {
 	if got.CacheWriteTokens == nil || *got.CacheWriteTokens != 100 {
 		t.Fatalf("CacheWriteTokens want 100, got %v", got.CacheWriteTokens)
 	}
-	if got.Model != "claude-sonnet-4-5-20250929" {
-		t.Fatalf("Model = %q, want claude-sonnet-4-5-20250929", got.Model)
+	if got.Model == nil || *got.Model != "claude-sonnet-4-5-20250929" {
+		t.Fatalf("Model = %v, want claude-sonnet-4-5-20250929", got.Model)
 	}
 }
 

@@ -66,7 +66,11 @@ func extractClaudeUsage(messages []services.ClaudeMessage) *services.CLIAgentUsa
 		return nil
 	}
 
-	usage := &services.CLIAgentUsage{Model: model}
+	usage := &services.CLIAgentUsage{}
+	if model != "" {
+		m := model
+		usage.Model = &m
+	}
 	if hasCostUSD {
 		c := costUSD
 		usage.CostUSD = &c

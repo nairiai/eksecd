@@ -51,10 +51,13 @@ func extractCodexUsage(messages []CodexMessage, model string) *services.CLIAgent
 	// nil to signal "unknown" rather than hardcoding 0, which would falsely
 	// imply we observed zero cache writes.
 	usage := &services.CLIAgentUsage{
-		Model:           model,
 		InputTokens:     &in,
 		OutputTokens:    &out,
 		CacheReadTokens: &cr,
+	}
+	if model != "" {
+		m := model
+		usage.Model = &m
 	}
 
 	if cost, ok := pricing.CodexCostUSD(model, inputTokens, cachedInputTokens, outputTokens); ok {

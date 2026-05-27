@@ -19,8 +19,5 @@ func applyUsageToAssistantPayload(p *models.AssistantMessagePayload, usage *serv
 	p.OutputTokens = usage.OutputTokens
 	p.CacheReadTokens = usage.CacheReadTokens
 	p.CacheWriteTokens = usage.CacheWriteTokens
-	if usage.Model != "" {
-		m := usage.Model
-		p.Model = &m
-	}
+	p.Model = usage.Model
 }

@@ -9,6 +9,7 @@ import (
 
 func ptrFloat(v float64) *float64 { return &v }
 func ptrI64(v int64) *int64       { return &v }
+func ptrStr(v string) *string     { return &v }
 
 func TestApplyUsageToAssistantPayload_NilUsageLeavesFieldsNil(t *testing.T) {
 	p := &models.AssistantMessagePayload{
@@ -34,7 +35,7 @@ func TestApplyUsageToAssistantPayload_PopulatesAllFields(t *testing.T) {
 		OutputTokens:     ptrI64(23),
 		CacheReadTokens:  ptrI64(1792),
 		CacheWriteTokens: ptrI64(0),
-		Model:            "claude-sonnet-4-5-20250929",
+		Model:            ptrStr("claude-sonnet-4-5-20250929"),
 	}
 	p := &models.AssistantMessagePayload{JobID: "j", Message: "m"}
 	applyUsageToAssistantPayload(p, usage)
@@ -58,14 +59,13 @@ func TestApplyUsageToAssistantPayload_PopulatesAllFields(t *testing.T) {
 	}
 }
 
-func TestApplyUsageToAssistantPayload_EmptyModelStaysNil(t *testing.T) {
-	// Usage with cost but no model name should not produce a non-nil Model
-	// pointer to the empty string in the outgoing payload.
+func TestApplyUsageToAssistantPayload_NilModelStaysNil(t *testing.T) {
+	// Usage with cost but no model name should propagate as a nil Model.
 	usage := &services.CLIAgentUsage{CostUSD: ptrFloat(0.05)}
 	p := &models.AssistantMessagePayload{}
 	applyUsageToAssistantPayload(p, usage)
 	if p.Model != nil {
-		t.Fatalf("expected nil Model for empty usage.Model, got %v", p.Model)
+		t.Fatalf("expected nil Model when usage.Model is nil, got %v", p.Model)
 	}
 	if p.CostUSD == nil || *p.CostUSD != 0.05 {
 		t.Fatalf("CostUSD not propagated: %v", p.CostUSD)

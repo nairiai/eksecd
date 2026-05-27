@@ -45,8 +45,8 @@ func TestExtractCodexUsage_SumsAcrossTurns(t *testing.T) {
 	if got.CacheWriteTokens != nil {
 		t.Fatalf("CacheWriteTokens should be nil for Codex (not reported), got %v", *got.CacheWriteTokens)
 	}
-	if got.Model != "gpt-5-codex" {
-		t.Fatalf("Model = %q, want gpt-5-codex", got.Model)
+	if got.Model == nil || *got.Model != "gpt-5-codex" {
+		t.Fatalf("Model = %v, want gpt-5-codex", got.Model)
 	}
 	// Cost should be computable from gpt-5-codex pricing.
 	// fresh = 1300 - 600 = 700 → 700/1M * 1.25 = 0.000875
