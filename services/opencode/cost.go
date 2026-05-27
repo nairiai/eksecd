@@ -16,15 +16,8 @@ import (
 // seconds is generous.
 const dbQueryTimeout = 10 * time.Second
 
-// openCodeMessageRow mirrors the JSON shape returned by `opencode db --format json`
-// when selecting message-level cost/tokens columns. Each row corresponds to
-// one assistant message that OpenCode produced during the just-finished run.
-type openCodeMessageRow struct {
-	Cost   float64           `json:"cost"`
-	Tokens openCodeTokensRow `json:"tokens"`
-	Model  string            `json:"modelID"`
-}
-
+// openCodeTokensRow mirrors the nested `tokens` JSON object returned by
+// `opencode db --format json` when selecting message-level cost columns.
 type openCodeTokensRow struct {
 	Total     int64                  `json:"total"`
 	Input     int64                  `json:"input"`
