@@ -42,8 +42,8 @@ func TestExtractCodexUsage_SumsAcrossTurns(t *testing.T) {
 	if *got.CacheReadTokens != 600 {
 		t.Fatalf("CacheReadTokens = %v, want 600", *got.CacheReadTokens)
 	}
-	if *got.CacheWriteTokens != 0 {
-		t.Fatalf("CacheWriteTokens should always be 0 for Codex, got %v", *got.CacheWriteTokens)
+	if got.CacheWriteTokens != nil {
+		t.Fatalf("CacheWriteTokens should be nil for Codex (not reported), got %v", *got.CacheWriteTokens)
 	}
 	if got.Model != "gpt-5-codex" {
 		t.Fatalf("Model = %q, want gpt-5-codex", got.Model)

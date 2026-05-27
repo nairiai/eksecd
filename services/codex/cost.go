@@ -46,16 +46,15 @@ func extractCodexUsage(messages []CodexMessage, model string) *services.CLIAgent
 	in := inputTokens
 	out := outputTokens
 	cr := cachedInputTokens
-	// Codex does not surface cache-write counts; the cached_input_tokens are
-	// cache reads only. We leave CacheWriteTokens at zero (explicit) so the
-	// shape matches Claude/OpenCode.
-	cw := int64(0)
+	// Codex's turn.completed events only report cached_input_tokens (= cache
+	// reads); the CLI does not surface cache-write counts. Leave CacheWriteTokens
+	// nil to signal "unknown" rather than hardcoding 0, which would falsely
+	// imply we observed zero cache writes.
 	usage := &services.CLIAgentUsage{
-		Model:            model,
-		InputTokens:      &in,
-		OutputTokens:     &out,
-		CacheReadTokens:  &cr,
-		CacheWriteTokens: &cw,
+		Model:           model,
+		InputTokens:     &in,
+		OutputTokens:    &out,
+		CacheReadTokens: &cr,
 	}
 
 	if cost, ok := pricing.CodexCostUSD(model, inputTokens, cachedInputTokens, outputTokens); ok {
