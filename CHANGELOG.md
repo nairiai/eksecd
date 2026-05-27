@@ -1,3 +1,12 @@
+## [v0.0.112] - 2026-05-27
+
+### Bugfixes
+
+- Populate `cost_usd` for Codex platform model ids + fix cross-user OpenCode db lookup ([#211](https://github.com/nairiai/nairid/pull/211))
+  - **Codex**: `services/pricing/codex.go` was keyed on OpenAI's public model names (`gpt-5`, `gpt-5-mini`, `gpt-5-codex`) but the Nairi platform exposes Codex models as dotted-minor ids (`gpt-5.4-mini`, `gpt-5.3-codex`, `gpt-5.5`, `gpt-5.5-pro`, `gpt-5.2-base`) and the Codex CLI reports those verbatim. `lookupCodexPricing` returned `(0, false)`, `omitempty` dropped the field, and every Codex assistant message landed with `cost_usd = NULL`. A new `^(gpt-N)\.\d+(-suffix)?$` normalisation step now folds platform ids onto the canonical OpenAI keys (`gpt-5.4-mini` → `gpt-5-mini`, `gpt-5.3-codex` → `gpt-5-codex`, etc.); unknown suffixes (`-pro`, `-base`) fall through to the existing prefix matcher → base-model pricing. Pricing values are unchanged
+  - **OpenCode**: `runOpenCodeDB` shelled out to `opencode db --format json` via plain `exec.CommandContext`, so the OpenCode CLI resolved its SQLite path from the *caller's* `$HOME`. In managed-mode containers nairid runs as `ccagent` but the actual `opencode run` subprocess runs as `agentrunner`, so the post-turn lookup read an empty `/home/ccagent/.local/share/opencode/opencode.db` while the real session data lived in `/home/agentrunner/.local/share/opencode/opencode.db`. Result: every OpenCode assistant message went out with NULL cost, tokens, and model. Now routed through `clients.BuildAgentCommandWithContext`, which executes the lookup via `sudo -u agentrunner` with `HOME=/home/agentrunner` injected — the same mechanism the `opencode run` subprocess already goes through, so the two paths always agree on where the SQLite lives. Self-hosted mode stays direct
+  - Also added `log.Warn` on every silent-fail branch in `fetchOpenCodeUsage` (empty/`unknown` session id, suspicious id, db query error, JSON parse error, zero rows, no cost & no tokens) so the next regression of this shape is visible in container logs
+
 ## [v0.0.111] - 2026-05-27
 
 ### Features
