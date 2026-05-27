@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"nairid/clients"
+	"nairid/core/log"
 	"nairid/services"
 )
 
@@ -35,10 +37,26 @@ type openCodeCacheTokensRow struct {
 // Production code uses runOpenCodeDB; tests can inject a stub.
 type dbQueryFunc func(ctx context.Context, query string) ([]byte, error)
 
+// buildOpenCodeDBCmd constructs the exec.Cmd that runOpenCodeDB will execute.
+// Extracted so the cross-user routing can be asserted in a regression test
+// (see cost_test.go) without actually shelling out.
+//
+// The lookup MUST run as the same user (and with the same HOME) as the
+// `opencode run` subprocess that just finished, otherwise OpenCode resolves
+// its SQLite path from the calling user's $HOME and reads an empty database.
+// In managed-mode containers nairid runs as ccagent but the agent subprocess
+// runs as agentrunner, so we go through clients.BuildAgentCommandWithContext
+// which routes via `sudo -u agentrunner` with HOME=/home/agentrunner injected.
+// In self-hosted mode this falls through to the current user, which is also
+// the user that ran the OpenCode subprocess.
+func buildOpenCodeDBCmd(ctx context.Context, query string) *exec.Cmd {
+	return clients.BuildAgentCommandWithContext(ctx, "opencode", "db", "--format", "json", query)
+}
+
 // runOpenCodeDB shells out to `opencode db --format json "<query>"` and
 // returns raw stdout bytes. Stderr is folded into the error on failure.
 func runOpenCodeDB(ctx context.Context, query string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "opencode", "db", "--format", "json", query)
+	cmd := buildOpenCodeDBCmd(ctx, query)
 	out, err := cmd.Output()
 	if err != nil {
 		stderr := ""
@@ -68,6 +86,7 @@ func fetchOpenCodeUsage(
 	query dbQueryFunc,
 ) *services.CLIAgentUsage {
 	if sessionID == "" || sessionID == "unknown" {
+		log.Warn("OpenCode cost lookup skipped: missing session id (got %q)", sessionID)
 		return nil
 	}
 
@@ -77,6 +96,7 @@ func fetchOpenCodeUsage(
 	// do a paranoia check to reject any session ID containing a single
 	// quote, which would never appear in a real OpenCode id.
 	if strings.ContainsAny(sessionID, "'\\\";\n") {
+		log.Warn("OpenCode cost lookup skipped: suspicious session id rejected: %q", sessionID)
 		return nil
 	}
 	runStartMs := runStart.UnixMilli()
@@ -100,6 +120,7 @@ func fetchOpenCodeUsage(
 
 	raw, err := query(cctx, q)
 	if err != nil {
+		log.Warn("OpenCode cost lookup: db query failed for session %s: %v", sessionID, err)
 		return nil
 	}
 
@@ -112,9 +133,11 @@ func fetchOpenCodeUsage(
 		Model  *string  `json:"modelID"`
 	}
 	if err := json.Unmarshal(raw, &rawRows); err != nil {
+		log.Warn("OpenCode cost lookup: failed to parse db output for session %s: %v", sessionID, err)
 		return nil
 	}
 	if len(rawRows) == 0 {
+		log.Warn("OpenCode cost lookup: no assistant rows found for session %s (cost will be NULL)", sessionID)
 		return nil
 	}
 
@@ -149,6 +172,7 @@ func fetchOpenCodeUsage(
 	}
 
 	if !hasCost && !hasTokens {
+		log.Warn("OpenCode cost lookup: rows returned but no cost or tokens parseable for session %s", sessionID)
 		return nil
 	}
 

@@ -99,6 +99,74 @@ func TestCodexCostUSD_DefensiveNegatives(t *testing.T) {
 	}
 }
 
+// Platform-flavoured model ids ("gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.5", "gpt-5.5-pro")
+// are what the Nairi platform actually exposes and what the Codex CLI reports back at
+// the end of a turn. The pricing table is keyed on OpenAI's canonical ids, so the
+// lookup must normalise the dotted-minor segment ("gpt-N.X" → "gpt-N") before falling
+// through to the prefix matcher for unknown suffixes like "-pro" / "-base".
+func TestCodexCostUSD_PlatformDottedMinorVersionIds(t *testing.T) {
+	tests := []struct {
+		name        string
+		model       string
+		inputTokens int64
+		want        float64
+	}{
+		{
+			name:        "gpt-5.4-mini normalises to gpt-5-mini",
+			model:       "gpt-5.4-mini",
+			inputTokens: 1_000_000,
+			want:        0.25, // gpt-5-mini input rate
+		},
+		{
+			name:        "gpt-5.3-codex normalises to gpt-5-codex",
+			model:       "gpt-5.3-codex",
+			inputTokens: 1_000_000,
+			want:        1.25, // gpt-5-codex input rate
+		},
+		{
+			name:        "gpt-5.5 normalises to gpt-5",
+			model:       "gpt-5.5",
+			inputTokens: 1_000_000,
+			want:        1.25, // gpt-5 input rate
+		},
+		{
+			name:        "gpt-5.5-pro: -pro suffix unknown → prefix-matches gpt-5",
+			model:       "gpt-5.5-pro",
+			inputTokens: 1_000_000,
+			want:        1.25,
+		},
+		{
+			name:        "gpt-5.2-base: -base suffix unknown → prefix-matches gpt-5",
+			model:       "gpt-5.2-base",
+			inputTokens: 1_000_000,
+			want:        1.25,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := CodexCostUSD(tt.model, tt.inputTokens, 0, 0)
+			if !ok {
+				t.Fatalf("expected ok=true for platform model %q", tt.model)
+			}
+			if math.Abs(got-tt.want) > 1e-9 {
+				t.Fatalf("CodexCostUSD(%q) = %v, want %v", tt.model, got, tt.want)
+			}
+		})
+	}
+}
+
+// Negative case: a model that does not match either canonical, snapshot, or
+// platform-dotted naming is still rejected so callers leave cost NULL.
+func TestCodexCostUSD_PlatformDottedMinorVersionStillRejectsGarbage(t *testing.T) {
+	if _, ok := CodexCostUSD("gpt-5.4.1-mini", 1_000_000, 0, 0); ok {
+		t.Fatalf("expected ok=false: 'gpt-5.4.1-mini' does not match the gpt-N.X[-suffix] pattern")
+	}
+	if _, ok := CodexCostUSD("gpt-99.0-mini", 1_000_000, 0, 0); ok {
+		t.Fatalf("expected ok=false: 'gpt-99.0-mini' normalises to 'gpt-99-mini' which is not in the pricing table")
+	}
+}
+
 func TestCodexCostUSD_CachedExceedsInputClamps(t *testing.T) {
 	// If cached > input the fresh count is clamped to zero so we never bill negative
 	// fresh tokens. cached itself is still billed (the reported value is the source of truth).
