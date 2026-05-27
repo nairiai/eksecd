@@ -3,9 +3,45 @@ package opencode
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
+
+// In managed-mode containers the `opencode run` subprocess executes as
+// `agentrunner` (HOME=/home/agentrunner) while nairid runs as ccagent.
+// The post-turn cost lookup MUST cross that user boundary, otherwise it
+// reads /home/ccagent/.local/share/opencode/opencode.db which is empty.
+// This regression-tests that buildOpenCodeDBCmd routes through sudo with
+// HOME pointed at the agent-exec user when AGENT_EXEC_USER is set.
+func TestBuildOpenCodeDBCmd_RoutesThroughAgentExecUser(t *testing.T) {
+	t.Setenv("AGENT_EXEC_USER", "agentrunner")
+
+	cmd := buildOpenCodeDBCmd(context.Background(), "SELECT 1")
+	if cmd.Args[0] != "sudo" {
+		t.Fatalf("expected sudo wrapper in managed mode, got argv[0]=%q (full: %v)", cmd.Args[0], cmd.Args)
+	}
+	// sudo -u agentrunner bash -c <script>
+	if len(cmd.Args) != 6 {
+		t.Fatalf("expected 6 sudo args, got %d: %v", len(cmd.Args), cmd.Args)
+	}
+	bashScript := cmd.Args[5]
+	if !strings.Contains(bashScript, "HOME=/home/agentrunner") {
+		t.Errorf("bash script should set HOME=/home/agentrunner so opencode db reads the agent's SQLite, got: %s", bashScript)
+	}
+	if !strings.Contains(bashScript, "opencode 'db' '--format' 'json'") {
+		t.Errorf("bash script should invoke `opencode db --format json`, got: %s", bashScript)
+	}
+}
+
+func TestBuildOpenCodeDBCmd_SelfHostedRunsDirectly(t *testing.T) {
+	_ = os.Unsetenv("AGENT_EXEC_USER")
+	cmd := buildOpenCodeDBCmd(context.Background(), "SELECT 1")
+	if cmd.Args[0] != "opencode" {
+		t.Fatalf("expected direct invocation in self-hosted mode, got argv[0]=%q (full: %v)", cmd.Args[0], cmd.Args)
+	}
+}
 
 func stubQuery(rows []byte, err error) dbQueryFunc {
 	return func(_ context.Context, _ string) ([]byte, error) {

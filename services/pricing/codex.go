@@ -1,6 +1,9 @@
 package pricing
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 // codexModelPricing holds per-million-token rates in USD for an OpenAI/Codex model.
 // Cached input tokens are billed at a discount versus fresh input tokens.
@@ -63,15 +66,45 @@ func CodexCostUSD(model string, inputTokens, cachedInputTokens, outputTokens int
 	return cost, true
 }
 
-// lookupCodexPricing returns the pricing entry for a model, accepting both
-// canonical model ids ("gpt-5-codex") and snapshot/date-stamped variants
-// ("gpt-5-codex-2026-04-01") by prefix matching.
+// platformMinorVersionRe strips the dotted minor version from platform-flavoured
+// Codex model ids ("gpt-5.4-mini" → "gpt-5-mini"). The Nairi platform exposes
+// Codex models under names like gpt-5.4-mini / gpt-5.5-pro / gpt-5.3-codex,
+// which OpenAI's public pricing pages do not list verbatim. We collapse the
+// `.X` segment so the canonical OpenAI keys ("gpt-5-mini", "gpt-5-codex", …)
+// keep matching. The capture group preserves the major version and any suffix.
+var platformMinorVersionRe = regexp.MustCompile(`^(gpt-\d+)\.\d+(-.+)?$`)
+
+// lookupCodexPricing returns the pricing entry for a model, accepting:
+//   - canonical OpenAI model ids ("gpt-5-codex")
+//   - snapshot / date-stamped variants ("gpt-5-codex-2026-04-01") via prefix match
+//   - platform-flavoured ids with a dotted minor version ("gpt-5.4-mini",
+//     "gpt-5.3-codex") by normalising "gpt-N.X[-suffix]" → "gpt-N[-suffix]"
+//     before lookup, then falling back to the prefix matcher.
 func lookupCodexPricing(model string) (codexModelPricing, bool) {
 	if p, ok := codexPricingByModel[model]; ok {
 		return p, true
 	}
-	// Prefix match for snapshot-suffixed model ids. Try longest first so
-	// "gpt-5-codex-2026-04-01" matches "gpt-5-codex" before "gpt-5".
+	if p, ok := matchPrefix(model); ok {
+		return p, true
+	}
+	// Platform-flavoured ids: collapse the .X minor segment and retry.
+	if m := platformMinorVersionRe.FindStringSubmatch(model); m != nil {
+		normalized := m[1] + m[2] // e.g. "gpt-5" + "-mini" = "gpt-5-mini"
+		if p, ok := codexPricingByModel[normalized]; ok {
+			return p, true
+		}
+		if p, ok := matchPrefix(normalized); ok {
+			return p, true
+		}
+	}
+	return codexModelPricing{}, false
+}
+
+// matchPrefix returns the longest pricing entry whose key is a prefix of
+// model (matched on full hyphen segments). Used for snapshot-suffixed ids
+// and for normalised platform ids that include a suffix we do not list
+// verbatim (e.g. "gpt-5-pro" → fall back to "gpt-5").
+func matchPrefix(model string) (codexModelPricing, bool) {
 	var best string
 	for prefix := range codexPricingByModel {
 		if !strings.HasPrefix(model, prefix+"-") {
