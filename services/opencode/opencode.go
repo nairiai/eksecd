@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +18,11 @@ type OpenCodeService struct {
 	openCodeClient clients.OpenCodeClient
 	logDir         string
 	model          string
+
+	// dbQuery is the function used to read post-run cost rows from
+	// OpenCode's local SQLite. Defaulted to a shell-out to `opencode db`;
+	// tests inject a stub.
+	dbQuery dbQueryFunc
 }
 
 func NewOpenCodeService(openCodeClient clients.OpenCodeClient, logDir, model string) *OpenCodeService {
@@ -24,6 +30,7 @@ func NewOpenCodeService(openCodeClient clients.OpenCodeClient, logDir, model str
 		openCodeClient: openCodeClient,
 		logDir:         logDir,
 		model:          model,
+		dbQuery:        runOpenCodeDB,
 	}
 }
 
@@ -141,6 +148,7 @@ func (o *OpenCodeService) StartNewConversationWithOptions(
 		}
 	}
 
+	runStart := time.Now().Add(-1 * time.Second) // small skew tolerance
 	rawOutput, err := o.openCodeClient.StartNewSession(prompt, finalOptions, onLine)
 	if err != nil {
 		log.Error("Failed to start new OpenCode session: %v", err)
@@ -175,6 +183,7 @@ func (o *OpenCodeService) StartNewConversationWithOptions(
 	result := &services.CLIAgentResult{
 		Output:    output,
 		SessionID: sessionID,
+		Usage:     fetchOpenCodeUsage(context.Background(), sessionID, runStart, o.dbQuery),
 	}
 
 	log.Info("📋 Completed successfully - started new OpenCode conversation with session: %s", sessionID)
@@ -266,6 +275,7 @@ func (o *OpenCodeService) ContinueConversationWithOptions(
 		}
 	}
 
+	runStart := time.Now().Add(-1 * time.Second) // small skew tolerance
 	rawOutput, err := o.openCodeClient.ContinueSession(sessionID, prompt, finalOptions, onLine)
 	if err != nil {
 		log.Error("Failed to continue OpenCode session: %v", err)
@@ -300,6 +310,7 @@ func (o *OpenCodeService) ContinueConversationWithOptions(
 	result := &services.CLIAgentResult{
 		Output:    output,
 		SessionID: actualSessionID,
+		Usage:     fetchOpenCodeUsage(context.Background(), actualSessionID, runStart, o.dbQuery),
 	}
 
 	log.Info("📋 Completed successfully - continued OpenCode conversation with session: %s", actualSessionID)

@@ -13,14 +13,26 @@ type ClaudeMessage interface {
 	GetSessionID() string
 }
 
+// ClaudeUsage holds per-LLM-call token accounting emitted on every "assistant"
+// event in claude --output-format stream-json. Cache fields are zero when the
+// API call did not use the prompt cache.
+type ClaudeUsage struct {
+	InputTokens              int64 `json:"input_tokens"`
+	OutputTokens             int64 `json:"output_tokens"`
+	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+}
+
 // AssistantMessage represents an assistant message from Claude
 type AssistantMessage struct {
 	Type    string `json:"type"`
 	Message struct {
 		ID         string            `json:"id"`
 		Type       string            `json:"type"`
+		Model      string            `json:"model,omitempty"`
 		Content    []json.RawMessage `json:"content"`     // Use RawMessage to handle both text and tool_use content
 		StopReason string            `json:"stop_reason"` // "end_turn" means final response, "tool_use" means more actions coming
+		Usage      ClaudeUsage       `json:"usage"`
 	} `json:"message"`
 	SessionID string `json:"session_id"`
 }
@@ -82,15 +94,16 @@ func (u UserMessage) GetSessionID() string {
 
 // ResultMessage represents a result message from Claude
 type ResultMessage struct {
-	Type          string  `json:"type"`
-	Subtype       string  `json:"subtype"`
-	IsError       bool    `json:"is_error"`
-	DurationMs    int     `json:"duration_ms"`
-	DurationAPIMs int     `json:"duration_api_ms"`
-	NumTurns      int     `json:"num_turns"`
-	Result        string  `json:"result"`
-	SessionID     string  `json:"session_id"`
-	TotalCostUsd  float64 `json:"total_cost_usd"`
+	Type          string      `json:"type"`
+	Subtype       string      `json:"subtype"`
+	IsError       bool        `json:"is_error"`
+	DurationMs    int         `json:"duration_ms"`
+	DurationAPIMs int         `json:"duration_api_ms"`
+	NumTurns      int         `json:"num_turns"`
+	Result        string      `json:"result"`
+	SessionID     string      `json:"session_id"`
+	TotalCostUsd  float64     `json:"total_cost_usd"`
+	Usage         ClaudeUsage `json:"usage"`
 }
 
 func (r ResultMessage) GetType() string {

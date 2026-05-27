@@ -132,6 +132,15 @@ type AssistantMessagePayload struct {
 	Message            string   `json:"message"`
 	ProcessedMessageID string   `json:"processed_message_id"`
 	AttachmentIDs      []string `json:"attachment_ids,omitempty"`
+	// Optional cost and token usage reported by the harness.
+	// Cursor leaves all of these nil; Claude/Codex/OpenCode populate
+	// what they know after the turn completes.
+	CostUSD          *float64 `json:"cost_usd,omitempty"`
+	InputTokens      *int64   `json:"input_tokens,omitempty"`
+	OutputTokens     *int64   `json:"output_tokens,omitempty"`
+	CacheReadTokens  *int64   `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens *int64   `json:"cache_write_tokens,omitempty"`
+	Model            *string  `json:"model,omitempty"`
 }
 
 type SystemMessagePayload struct {

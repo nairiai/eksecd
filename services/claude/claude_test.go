@@ -431,10 +431,12 @@ func TestClaudeService_extractSessionID(t *testing.T) {
 				services.AssistantMessage{
 					Type: "assistant",
 					Message: struct {
-						ID         string            `json:"id"`
-						Type       string            `json:"type"`
-						Content    []json.RawMessage `json:"content"`
-						StopReason string            `json:"stop_reason"`
+						ID         string               `json:"id"`
+						Type       string               `json:"type"`
+						Model      string               `json:"model,omitempty"`
+						Content    []json.RawMessage    `json:"content"`
+						StopReason string               `json:"stop_reason"`
+						Usage      services.ClaudeUsage `json:"usage"`
 					}{
 						ID:         "msg_123",
 						Type:       "message",
@@ -471,10 +473,12 @@ func TestClaudeService_extractSessionID(t *testing.T) {
 				services.AssistantMessage{
 					Type: "assistant",
 					Message: struct {
-						ID         string            `json:"id"`
-						Type       string            `json:"type"`
-						Content    []json.RawMessage `json:"content"`
-						StopReason string            `json:"stop_reason"`
+						ID         string               `json:"id"`
+						Type       string               `json:"type"`
+						Model      string               `json:"model,omitempty"`
+						Content    []json.RawMessage    `json:"content"`
+						StopReason string               `json:"stop_reason"`
+						Usage      services.ClaudeUsage `json:"usage"`
 					}{
 						ID:      "msg_456",
 						Type:    "message",
@@ -527,10 +531,12 @@ func TestClaudeService_extractClaudeResult(t *testing.T) {
 				services.AssistantMessage{
 					Type: "assistant",
 					Message: struct {
-						ID         string            `json:"id"`
-						Type       string            `json:"type"`
-						Content    []json.RawMessage `json:"content"`
-						StopReason string            `json:"stop_reason"`
+						ID         string               `json:"id"`
+						Type       string               `json:"type"`
+						Model      string               `json:"model,omitempty"`
+						Content    []json.RawMessage    `json:"content"`
+						StopReason string               `json:"stop_reason"`
+						Usage      services.ClaudeUsage `json:"usage"`
 					}{
 						ID:         "msg_123",
 						Type:       "message",
@@ -551,10 +557,12 @@ func TestClaudeService_extractClaudeResult(t *testing.T) {
 				services.AssistantMessage{
 					Type: "assistant",
 					Message: struct {
-						ID         string            `json:"id"`
-						Type       string            `json:"type"`
-						Content    []json.RawMessage `json:"content"`
-						StopReason string            `json:"stop_reason"`
+						ID         string               `json:"id"`
+						Type       string               `json:"type"`
+						Model      string               `json:"model,omitempty"`
+						Content    []json.RawMessage    `json:"content"`
+						StopReason string               `json:"stop_reason"`
+						Usage      services.ClaudeUsage `json:"usage"`
 					}{
 						ID:         "msg_123",
 						Type:       "message",
@@ -586,10 +594,12 @@ func TestClaudeService_extractClaudeResult(t *testing.T) {
 				services.AssistantMessage{
 					Type: "assistant",
 					Message: struct {
-						ID         string            `json:"id"`
-						Type       string            `json:"type"`
-						Content    []json.RawMessage `json:"content"`
-						StopReason string            `json:"stop_reason"`
+						ID         string               `json:"id"`
+						Type       string               `json:"type"`
+						Model      string               `json:"model,omitempty"`
+						Content    []json.RawMessage    `json:"content"`
+						StopReason string               `json:"stop_reason"`
+						Usage      services.ClaudeUsage `json:"usage"`
 					}{
 						ID:         "msg_only",
 						Type:       "message",
@@ -622,10 +632,12 @@ func TestClaudeService_extractClaudeResult(t *testing.T) {
 				services.AssistantMessage{
 					Type: "assistant",
 					Message: struct {
-						ID         string            `json:"id"`
-						Type       string            `json:"type"`
-						Content    []json.RawMessage `json:"content"`
-						StopReason string            `json:"stop_reason"`
+						ID         string               `json:"id"`
+						Type       string               `json:"type"`
+						Model      string               `json:"model,omitempty"`
+						Content    []json.RawMessage    `json:"content"`
+						StopReason string               `json:"stop_reason"`
+						Usage      services.ClaudeUsage `json:"usage"`
 					}{
 						ID:         "msg_detailed",
 						Type:       "message",
@@ -652,10 +664,12 @@ func TestClaudeService_extractClaudeResult(t *testing.T) {
 				services.AssistantMessage{
 					Type: "assistant",
 					Message: struct {
-						ID         string            `json:"id"`
-						Type       string            `json:"type"`
-						Content    []json.RawMessage `json:"content"`
-						StopReason string            `json:"stop_reason"`
+						ID         string               `json:"id"`
+						Type       string               `json:"type"`
+						Model      string               `json:"model,omitempty"`
+						Content    []json.RawMessage    `json:"content"`
+						StopReason string               `json:"stop_reason"`
+						Usage      services.ClaudeUsage `json:"usage"`
 					}{
 						ID:         "msg_confirm",
 						Type:       "message",
@@ -690,10 +704,12 @@ func TestClaudeService_extractClaudeResult(t *testing.T) {
 				services.AssistantMessage{
 					Type: "assistant",
 					Message: struct {
-						ID         string            `json:"id"`
-						Type       string            `json:"type"`
-						Content    []json.RawMessage `json:"content"`
-						StopReason string            `json:"stop_reason"`
+						ID         string               `json:"id"`
+						Type       string               `json:"type"`
+						Model      string               `json:"model,omitempty"`
+						Content    []json.RawMessage    `json:"content"`
+						StopReason string               `json:"stop_reason"`
+						Usage      services.ClaudeUsage `json:"usage"`
 					}{
 						ID:         "msg_analysis",
 						Type:       "message",
@@ -720,10 +736,12 @@ func TestClaudeService_extractClaudeResult(t *testing.T) {
 				services.AssistantMessage{
 					Type: "assistant",
 					Message: struct {
-						ID         string            `json:"id"`
-						Type       string            `json:"type"`
-						Content    []json.RawMessage `json:"content"`
-						StopReason string            `json:"stop_reason"`
+						ID         string               `json:"id"`
+						Type       string               `json:"type"`
+						Model      string               `json:"model,omitempty"`
+						Content    []json.RawMessage    `json:"content"`
+						StopReason string               `json:"stop_reason"`
+						Usage      services.ClaudeUsage `json:"usage"`
 					}{
 						ID:         "msg_summary",
 						Type:       "message",
@@ -747,10 +765,12 @@ func TestClaudeService_extractClaudeResult(t *testing.T) {
 				services.AssistantMessage{
 					Type: "assistant",
 					Message: struct {
-						ID         string            `json:"id"`
-						Type       string            `json:"type"`
-						Content    []json.RawMessage `json:"content"`
-						StopReason string            `json:"stop_reason"`
+						ID         string               `json:"id"`
+						Type       string               `json:"type"`
+						Model      string               `json:"model,omitempty"`
+						Content    []json.RawMessage    `json:"content"`
+						StopReason string               `json:"stop_reason"`
+						Usage      services.ClaudeUsage `json:"usage"`
 					}{
 						ID:         "msg_poem",
 						Type:       "message",
@@ -777,10 +797,12 @@ func TestClaudeService_extractClaudeResult(t *testing.T) {
 				services.AssistantMessage{
 					Type: "assistant",
 					Message: struct {
-						ID         string            `json:"id"`
-						Type       string            `json:"type"`
-						Content    []json.RawMessage `json:"content"`
-						StopReason string            `json:"stop_reason"`
+						ID         string               `json:"id"`
+						Type       string               `json:"type"`
+						Model      string               `json:"model,omitempty"`
+						Content    []json.RawMessage    `json:"content"`
+						StopReason string               `json:"stop_reason"`
+						Usage      services.ClaudeUsage `json:"usage"`
 					}{
 						ID:         "msg_haiku",
 						Type:       "message",

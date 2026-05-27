@@ -2,10 +2,29 @@ package services
 
 import "nairid/models"
 
-// CLIAgentResult represents the result of a CLI agent conversation
+// CLIAgentResult represents the result of a CLI agent conversation.
+// Cost and Usage fields are optional; harnesses that do not report them
+// (e.g. Cursor) leave them nil and the backend persists NULL columns.
 type CLIAgentResult struct {
 	Output    string
 	SessionID string
+	Usage     *CLIAgentUsage
+}
+
+// CLIAgentUsage holds optional per-message cost and token usage data
+// extracted from a CLI harness after a conversation turn completes.
+// Every field is a pointer because no single harness populates all of
+// them: Cursor reports nothing, Codex cannot report cache writes,
+// OpenCode is best-effort, and Claude may omit cost on cache-only
+// turns. Use nil to mean "the harness did not report this value" so
+// callers can persist NULL rather than a misleading zero/empty value.
+type CLIAgentUsage struct {
+	CostUSD          *float64
+	InputTokens      *int64
+	OutputTokens     *int64
+	CacheReadTokens  *int64
+	CacheWriteTokens *int64
+	Model            *string
 }
 
 // ProgressEmitter is a callback for emitting progress messages during agent execution
