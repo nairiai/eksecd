@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"nairid/clients"
 	"nairid/core"
@@ -49,7 +50,8 @@ func (c *ClaudeClient) StartNewSession(prompt string, options *clients.ClaudeOpt
 	log.Info("Starting new Claude session with prompt: %s", prompt)
 	log.Info("Command arguments: %v", args)
 
-	ctx, cancel := context.WithTimeout(context.Background(), clients.DefaultSessionTimeout)
+	timeout := clients.SessionTimeout()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cmd := c.buildCommand(ctx, options, args)
@@ -57,10 +59,10 @@ func (c *ClaudeClient) StartNewSession(prompt string, options *clients.ClaudeOpt
 		cmd.Stdin = promptStdin
 	}
 
-	log.Info("Running Claude command (timeout: %s)", clients.DefaultSessionTimeout)
+	log.Info("Running Claude command (timeout: %s)", timeout)
 	result, err := clients.RunCommandStreaming(ctx, cmd, onLine)
 	if err != nil {
-		return "", handleCommandError(ctx, err, "Claude")
+		return "", handleCommandError(ctx, err, "Claude", timeout)
 	}
 
 	log.Info("Claude command completed successfully, outputLength: %d", len(result))
@@ -96,7 +98,8 @@ func (c *ClaudeClient) ContinueSession(sessionID, prompt string, options *client
 	log.Info("Executing Claude command with sessionID: %s, prompt: %s", sessionID, prompt)
 	log.Info("Command arguments: %v", args)
 
-	ctx, cancel := context.WithTimeout(context.Background(), clients.DefaultSessionTimeout)
+	timeout := clients.SessionTimeout()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cmd := c.buildCommand(ctx, options, args)
@@ -104,10 +107,10 @@ func (c *ClaudeClient) ContinueSession(sessionID, prompt string, options *client
 		cmd.Stdin = promptStdin
 	}
 
-	log.Info("Running Claude command (timeout: %s)", clients.DefaultSessionTimeout)
+	log.Info("Running Claude command (timeout: %s)", timeout)
 	result, err := clients.RunCommandStreaming(ctx, cmd, onLine)
 	if err != nil {
-		return "", handleCommandError(ctx, err, "Claude")
+		return "", handleCommandError(ctx, err, "Claude", timeout)
 	}
 
 	log.Info("Claude command completed successfully, outputLength: %d", len(result))
@@ -128,13 +131,13 @@ func (c *ClaudeClient) buildPermissionArgs() []string {
 
 // handleCommandError converts a clients.CommandError to a core.ErrClaudeCommandErr,
 // including timeout detection via context deadline.
-func handleCommandError(ctx context.Context, err error, agentName string) error {
+func handleCommandError(ctx context.Context, err error, agentName string, timeout time.Duration) error {
 	var cmdErr *clients.CommandError
 	if errors.As(err, &cmdErr) {
 		if ctx.Err() == context.DeadlineExceeded {
-			log.Error("⏰ %s session timed out after %s", agentName, clients.DefaultSessionTimeout)
+			log.Error("⏰ %s session timed out after %s", agentName, timeout)
 			return &core.ErrClaudeCommandErr{
-				Err:    fmt.Errorf("session timed out after %s: %w", clients.DefaultSessionTimeout, cmdErr.Err),
+				Err:    fmt.Errorf("session timed out after %s: %w", timeout, cmdErr.Err),
 				Output: cmdErr.Output,
 			}
 		}

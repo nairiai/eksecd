@@ -46,18 +46,19 @@ func (c *CursorClient) StartNewSession(prompt string, options *clients.CursorOpt
 	log.Info("Starting new Cursor session with prompt: %s", finalPrompt)
 	log.Info("Command arguments: %v", args)
 
-	ctx, cancel := context.WithTimeout(context.Background(), clients.DefaultSessionTimeout)
+	timeout := clients.SessionTimeout()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cmd := clients.BuildAgentCommandWithContext(ctx, "cursor-agent", args...)
 
-	log.Info("Running Cursor command (timeout: %s)", clients.DefaultSessionTimeout)
+	log.Info("Running Cursor command (timeout: %s)", timeout)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			log.Error("⏰ Cursor session timed out after %s", clients.DefaultSessionTimeout)
+			log.Error("⏰ Cursor session timed out after %s", timeout)
 			return "", &core.ErrClaudeCommandErr{
-				Err:    fmt.Errorf("session timed out after %s: %w", clients.DefaultSessionTimeout, err),
+				Err:    fmt.Errorf("session timed out after %s: %w", timeout, err),
 				Output: string(output),
 			}
 		}
@@ -91,18 +92,19 @@ func (c *CursorClient) ContinueSession(sessionID, prompt string, options *client
 	log.Info("Executing Cursor command with sessionID: %s, prompt: %s", sessionID, prompt)
 	log.Info("Command arguments: %v", args)
 
-	ctx, cancel := context.WithTimeout(context.Background(), clients.DefaultSessionTimeout)
+	timeout := clients.SessionTimeout()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cmd := clients.BuildAgentCommandWithContext(ctx, "cursor-agent", args...)
 
-	log.Info("Running Cursor command (timeout: %s)", clients.DefaultSessionTimeout)
+	log.Info("Running Cursor command (timeout: %s)", timeout)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			log.Error("⏰ Cursor session timed out after %s", clients.DefaultSessionTimeout)
+			log.Error("⏰ Cursor session timed out after %s", timeout)
 			return "", &core.ErrClaudeCommandErr{
-				Err:    fmt.Errorf("session timed out after %s: %w", clients.DefaultSessionTimeout, err),
+				Err:    fmt.Errorf("session timed out after %s: %w", timeout, err),
 				Output: string(output),
 			}
 		}

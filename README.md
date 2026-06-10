@@ -88,6 +88,12 @@ export NAIRI_API_KEY=your_api_key_here
 
 You can generate an API key from the Nairi dashboard.
 
+#### Optional Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `NAIRI_MAX_SESSION_MS` | `3600000` (1 hour) | Maximum duration (in milliseconds) of a single agent CLI invocation before nairid kills the process. Bump this when running long single-turn tasks; the underlying CLI keeps streaming output across the whole window. `EKSEC_MAX_SESSION_MS` is accepted as a legacy fallback. Invalid or non-positive values are ignored and the default is used. |
+
 #### Running nairid
 
 Once setup is complete, run nairid in your repository directory.
