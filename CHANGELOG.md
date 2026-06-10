@@ -1,3 +1,14 @@
+## [v0.0.113] - 2026-06-10
+
+### Features
+
+- Make CLI session timeout configurable via `NAIRI_MAX_SESSION_MS` ([#212](https://github.com/nairiai/nairid/pull/212))
+  - The per-CLI-session timeout was previously hardcoded at 1 hour in `clients/process.go`. Any single agent turn (plan → implement → test in one run) was force-killed at the 60-minute mark, regardless of how the daemon was deployed — long single-turn workloads required a nairid rebuild to lift the cap
+  - Replaces the hardcoded `DefaultSessionTimeout` constant with a `SessionTimeout()` accessor that reads `NAIRI_MAX_SESSION_MS` (with `EKSEC_MAX_SESSION_MS` accepted as a legacy fallback) as an integer number of milliseconds. Invalid or non-positive values fall back to the 1-hour default and emit a warning log so misconfiguration is visible
+  - All four CLI client packages (`claude`, `codex`, `opencode`, `cursor`) now read the value once at session start and reuse it for both the context deadline and the timeout reported in error messages and log lines — operators can grep container logs for the exact configured value
+  - `NAIRI_MAX_SESSION_MS` and `EKSEC_MAX_SESSION_MS` are added to `BlockedEnvVars` so nairid-internal config does not leak into agent subprocesses. Existing harness env-filtering tests cover the new vars
+  - Operational impact: defaults are unchanged (1h cap as before). Operators that want longer single-turn sessions can set e.g. `NAIRI_MAX_SESSION_MS=10800000` (3h) on the container env and restart nairid — no rebuild required
+
 ## [v0.0.112] - 2026-05-27
 
 ### Bugfixes
