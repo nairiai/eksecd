@@ -80,6 +80,33 @@ func TestFilterEnvForAgent_LegacyEksecVars(t *testing.T) {
 	}
 }
 
+func TestFilterEnvForAgent_SessionTimeoutVars(t *testing.T) {
+	// NAIRI_MAX_SESSION_MS and EKSEC_MAX_SESSION_MS are nairid-internal config
+	// and must not leak into agent subprocess environments.
+	env := []string{
+		"PATH=/usr/bin",
+		"NAIRI_MAX_SESSION_MS=3600000",
+		"EKSEC_MAX_SESSION_MS=1800000",
+		"HOME=/home/user",
+	}
+
+	filtered := FilterEnvForAgent(env)
+
+	for _, e := range filtered {
+		if strings.HasPrefix(e, "NAIRI_MAX_SESSION_MS=") {
+			t.Errorf("NAIRI_MAX_SESSION_MS should be filtered out, but found: %s", e)
+		}
+		if strings.HasPrefix(e, "EKSEC_MAX_SESSION_MS=") {
+			t.Errorf("EKSEC_MAX_SESSION_MS should be filtered out, but found: %s", e)
+		}
+	}
+
+	// 4 original - 2 blocked = 2 remaining
+	if len(filtered) != 2 {
+		t.Errorf("Expected 2 filtered vars, got %d", len(filtered))
+	}
+}
+
 func TestFilterEnvForAgent_EmptyEnv(t *testing.T) {
 	filtered := FilterEnvForAgent([]string{})
 	if len(filtered) != 0 {
@@ -671,5 +698,51 @@ func TestProcessGroupKill_KillsChildProcesses(t *testing.T) {
 	if err == nil {
 		_ = syscall.Kill(-pgid, syscall.SIGKILL)
 		t.Error("process group should be dead after context cancellation, but it's still alive")
+	}
+}
+
+func TestSessionTimeout(t *testing.T) {
+	// Snapshot and restore both env vars around every subtest.
+	origNairi := os.Getenv("NAIRI_MAX_SESSION_MS")
+	origEksec := os.Getenv("EKSEC_MAX_SESSION_MS")
+	defer func() {
+		_ = os.Setenv("NAIRI_MAX_SESSION_MS", origNairi)
+		_ = os.Setenv("EKSEC_MAX_SESSION_MS", origEksec)
+	}()
+
+	tests := []struct {
+		name     string
+		nairi    string // value to set; empty means unset
+		eksec    string
+		expected time.Duration
+	}{
+		{"unset falls back to default", "", "", DefaultSessionTimeout},
+		{"NAIRI_MAX_SESSION_MS honored", "7200000", "", 2 * time.Hour},
+		{"EKSEC_MAX_SESSION_MS honored as legacy", "", "1800000", 30 * time.Minute},
+		{"NAIRI takes precedence over EKSEC", "10800000", "1800000", 3 * time.Hour},
+		{"invalid value falls back to default", "not-a-number", "", DefaultSessionTimeout},
+		{"zero falls back to default", "0", "", DefaultSessionTimeout},
+		{"negative falls back to default", "-1000", "", DefaultSessionTimeout},
+		{"small value (1 second) accepted", "1000", "", 1 * time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.nairi == "" {
+				_ = os.Unsetenv("NAIRI_MAX_SESSION_MS")
+			} else {
+				_ = os.Setenv("NAIRI_MAX_SESSION_MS", tt.nairi)
+			}
+			if tt.eksec == "" {
+				_ = os.Unsetenv("EKSEC_MAX_SESSION_MS")
+			} else {
+				_ = os.Setenv("EKSEC_MAX_SESSION_MS", tt.eksec)
+			}
+
+			got := SessionTimeout()
+			if got != tt.expected {
+				t.Errorf("SessionTimeout() = %s, want %s", got, tt.expected)
+			}
+		})
 	}
 }

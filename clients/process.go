@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -16,22 +17,56 @@ import (
 // child processes keep the stdout pipe open.
 const WaitDelayAfterKill = 10 * time.Second
 
-// DefaultSessionTimeout is the maximum duration an agent CLI session can run
-// before being killed. This prevents hung processes from blocking the worker pool.
+// DefaultSessionTimeout is the fallback maximum duration an agent CLI session
+// can run before being killed. Prefer SessionTimeout() at runtime, which
+// honours the NAIRI_MAX_SESSION_MS env var override.
 const DefaultSessionTimeout = 1 * time.Hour
 
 // BlockedEnvVars lists environment variables that should never be passed to agent processes.
-// These contain sensitive credentials that agents should not have access to.
+// These contain sensitive credentials or nairid-internal config that agents should not see.
 var BlockedEnvVars = map[string]bool{
-	"NAIRI_API_KEY":      true,
-	"NAIRI_WS_API_URL":   true,
-	"EKSEC_API_KEY":      true, // Legacy env var
-	"EKSEC_WS_API_URL":   true, // Legacy env var
-	"CCAGENT_API_KEY":    true, // Legacy env var
-	"CCAGENT_WS_API_URL": true, // Legacy env var
-	"AGENT_EXEC_USER":    true,
-	"AGENT_HTTP_PROXY":   true, // This is for nairid to read, not for agents
-	"AGENT_MCP_PROXY":    true, // This is for nairid to read, not for agents
+	"NAIRI_API_KEY":        true,
+	"NAIRI_WS_API_URL":     true,
+	"NAIRI_MAX_SESSION_MS": true, // nairid-only config (CLI session timeout)
+	"EKSEC_API_KEY":        true, // Legacy env var
+	"EKSEC_WS_API_URL":     true, // Legacy env var
+	"EKSEC_MAX_SESSION_MS": true, // Legacy env var
+	"CCAGENT_API_KEY":      true, // Legacy env var
+	"CCAGENT_WS_API_URL":   true, // Legacy env var
+	"AGENT_EXEC_USER":      true,
+	"AGENT_HTTP_PROXY":     true, // This is for nairid to read, not for agents
+	"AGENT_MCP_PROXY":      true, // This is for nairid to read, not for agents
+}
+
+// SessionTimeout returns the per-CLI-session timeout used to bound a single
+// agent invocation (claude, codex, opencode, cursor).
+//
+// Resolution order:
+//  1. NAIRI_MAX_SESSION_MS — integer number of milliseconds (must be > 0)
+//  2. EKSEC_MAX_SESSION_MS — legacy fallback, same format
+//  3. DefaultSessionTimeout (1 hour) when neither is set or the value is invalid
+//
+// Operators who need long-running single-turn sessions can bump this without
+// recompiling nairid. The value is read on every call so a deployment can pick
+// up changes by restarting the daemon.
+func SessionTimeout() time.Duration {
+	raw := os.Getenv("NAIRI_MAX_SESSION_MS")
+	source := "NAIRI_MAX_SESSION_MS"
+	if raw == "" {
+		raw = os.Getenv("EKSEC_MAX_SESSION_MS")
+		source = "EKSEC_MAX_SESSION_MS"
+	}
+	if raw == "" {
+		return DefaultSessionTimeout
+	}
+
+	ms, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || ms <= 0 {
+		log.Printf("[SessionTimeout] invalid %s=%q, falling back to default %s", source, raw, DefaultSessionTimeout)
+		return DefaultSessionTimeout
+	}
+
+	return time.Duration(ms) * time.Millisecond
 }
 
 // AgentExecUser returns the configured user for running agent processes.

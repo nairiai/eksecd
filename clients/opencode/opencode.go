@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"time"
 
 	"nairid/clients"
 	"nairid/core"
@@ -39,15 +40,16 @@ func (c *OpenCodeClient) StartNewSession(prompt string, options *clients.OpenCod
 	log.Info("Starting new OpenCode session with prompt: %s", prompt)
 	log.Info("Command arguments: %v", args)
 
-	ctx, cancel := context.WithTimeout(context.Background(), clients.DefaultSessionTimeout)
+	timeout := clients.SessionTimeout()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cmd := buildCommand(ctx, options, args)
 
-	log.Info("Running OpenCode command (timeout: %s)", clients.DefaultSessionTimeout)
+	log.Info("Running OpenCode command (timeout: %s)", timeout)
 	result, err := clients.RunCommandStreaming(ctx, cmd, onLine)
 	if err != nil {
-		return "", handleCommandError(ctx, err, "OpenCode")
+		return "", handleCommandError(ctx, err, "OpenCode", timeout)
 	}
 
 	log.Info("OpenCode command completed successfully, outputLength: %d", len(result))
@@ -76,15 +78,16 @@ func (c *OpenCodeClient) ContinueSession(sessionID, prompt string, options *clie
 	log.Info("Executing OpenCode command with sessionID: %s, prompt: %s", sessionID, prompt)
 	log.Info("Command arguments: %v", args)
 
-	ctx, cancel := context.WithTimeout(context.Background(), clients.DefaultSessionTimeout)
+	timeout := clients.SessionTimeout()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cmd := buildCommand(ctx, options, args)
 
-	log.Info("Running OpenCode command (timeout: %s)", clients.DefaultSessionTimeout)
+	log.Info("Running OpenCode command (timeout: %s)", timeout)
 	result, err := clients.RunCommandStreaming(ctx, cmd, onLine)
 	if err != nil {
-		return "", handleCommandError(ctx, err, "OpenCode")
+		return "", handleCommandError(ctx, err, "OpenCode", timeout)
 	}
 
 	log.Info("OpenCode command completed successfully, outputLength: %d", len(result))
@@ -94,13 +97,13 @@ func (c *OpenCodeClient) ContinueSession(sessionID, prompt string, options *clie
 
 // handleCommandError converts a clients.CommandError to a core.ErrClaudeCommandErr,
 // including timeout detection via context deadline.
-func handleCommandError(ctx context.Context, err error, agentName string) error {
+func handleCommandError(ctx context.Context, err error, agentName string, timeout time.Duration) error {
 	var cmdErr *clients.CommandError
 	if errors.As(err, &cmdErr) {
 		if ctx.Err() == context.DeadlineExceeded {
-			log.Error("⏰ %s session timed out after %s", agentName, clients.DefaultSessionTimeout)
+			log.Error("⏰ %s session timed out after %s", agentName, timeout)
 			return &core.ErrClaudeCommandErr{
-				Err:    fmt.Errorf("session timed out after %s: %w", clients.DefaultSessionTimeout, cmdErr.Err),
+				Err:    fmt.Errorf("session timed out after %s: %w", timeout, cmdErr.Err),
 				Output: cmdErr.Output,
 			}
 		}
