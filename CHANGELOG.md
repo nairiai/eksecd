@@ -1,3 +1,14 @@
+## [v0.0.114] - 2026-06-15
+
+### Bugfixes
+
+- Extract Claude session id from result event, not first hook event ([#213](https://github.com/nairiai/nairid/pull/213))
+  - On `claude --resume <id> -p --output-format stream-json --verbose`, Claude Code emits `SessionStart` hook events FIRST, carrying the CLI's bootstrap session id, BEFORE `switchSession()` swaps in the actual resumed id. `extractSessionID` returned the first non-empty `session_id` in the stream and so persisted that ephemeral hook id. The next `--resume` then failed with `No conversation found with session ID: <ephemeral>` because that id was never written to disk — only the resumed/on-disk id appears in the system init event onward and in the result event
+  - When the failed resume returned `exit status 1`, the backend's `ProcessSystemMessage` matched `isAgentErrorMessage` → archived the job → the next user reply created a brand-new conversation seeded only from the visible thread. In-session state (TODO list, scratchpad, anything not echoed to the channel) was silently lost
+  - Only fires when a SessionStart hook is configured (project-level `.claude/settings.json`, repo-level checked-in config, or user-level `~/.claude/settings.json` on self-hosted hosts) — which is why the bug was intermittent and only surfaced in real-world setups where Claude Code was also used interactively. Managed agent containers don't configure hooks, so they were silently relying on the first-vs-result session id being equal
+  - Fix: `extractSessionID` now walks messages back-to-front and prefers the `result` event's `session_id` (always the post-switch / on-disk id). Falls back to the last non-empty `session_id` if the CLI exits before emitting a result event (defensive — covers mid-stream session switches, malformed result events, and CLI crashes). Pure transform — no concurrency state, works identically for `MAX_CONCURRENCY=1` and worktree mode
+  - Added 5 new unit tests including a verbatim replay of the line ordering captured from real `claude 2.1.139 --resume` output with a SessionStart hook configured
+
 ## [v0.0.113] - 2026-06-10
 
 ### Features
