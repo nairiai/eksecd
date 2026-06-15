@@ -341,13 +341,26 @@ func (c *ClaudeService) ContinueConversationWithOptions(
 }
 
 func (c *ClaudeService) extractSessionID(messages []services.ClaudeMessage) string {
-	// Iterate through all messages to find a valid session ID.
-	// The first message may be an UnknownClaudeMessage (e.g., from non-JSON output
-	// like Terms of Service notices) with an empty session ID.
-	for _, msg := range messages {
-		sessionID := msg.GetSessionID()
-		if sessionID != "" {
-			return sessionID
+	// Prefer the result event's session_id. On --resume, Claude Code's
+	// stream-json output emits SessionStart hook events FIRST, carrying the
+	// CLI's bootstrap session id, BEFORE switchSession() swaps in the actual
+	// resumed id. Earlier versions of this function returned the first
+	// non-empty session_id and so persisted that ephemeral hook id, causing
+	// the next --resume to fail with "No conversation found with session ID".
+	// The result event always carries the post-switch (on-disk) id and is
+	// therefore the safe choice. Fall back to the last non-empty session_id
+	// for the rare case where the CLI exits before emitting a result event.
+	for i := len(messages) - 1; i >= 0; i-- {
+		if resultMsg, ok := messages[i].(services.ResultMessage); ok {
+			if sid := resultMsg.GetSessionID(); sid != "" {
+				return sid
+			}
+			break
+		}
+	}
+	for i := len(messages) - 1; i >= 0; i-- {
+		if sid := messages[i].GetSessionID(); sid != "" {
+			return sid
 		}
 	}
 	return "unknown"
