@@ -497,6 +497,62 @@ func TestClaudeService_extractSessionID(t *testing.T) {
 			},
 			expected: "unknown",
 		},
+		{
+			// Regression: on `claude --resume <id>` with stream-json + verbose,
+			// SessionStart hook events fire BEFORE switchSession() swaps in the
+			// actual resumed id, so the leading hook_started / hook_response
+			// events carry an ephemeral bootstrap id. Earlier code returned that
+			// ephemeral id, which the next --resume then failed to find on disk
+			// ("No conversation found with session ID"). The fix prefers the
+			// result event's id, which is always the post-switch / on-disk id.
+			name: "resume with SessionStart hook: ephemeral hook id ignored, result event id wins",
+			messages: []services.ClaudeMessage{
+				services.SystemMessage{Type: "system", Subtype: "hook_started", SessionID: "ephemeral-hook-id"},
+				services.SystemMessage{Type: "system", Subtype: "hook_response", SessionID: "ephemeral-hook-id"},
+				services.SystemMessage{Type: "system", Subtype: "init", SessionID: "resumed-on-disk-id"},
+				services.AssistantMessage{
+					Type:      "assistant",
+					SessionID: "resumed-on-disk-id",
+				},
+				services.ResultMessage{Type: "result", Subtype: "success", SessionID: "resumed-on-disk-id"},
+			},
+			expected: "resumed-on-disk-id",
+		},
+		{
+			// Belt-and-suspenders: even if some events between init and result
+			// carry a different id (e.g. mid-stream session switch), the result
+			// event is authoritative.
+			name: "result event session id wins over earlier conflicting ids",
+			messages: []services.ClaudeMessage{
+				services.SystemMessage{Type: "system", Subtype: "init", SessionID: "old-id"},
+				services.AssistantMessage{Type: "assistant", SessionID: "old-id"},
+				services.ResultMessage{Type: "result", Subtype: "success", SessionID: "post-switch-id"},
+			},
+			expected: "post-switch-id",
+		},
+		{
+			// CLI may crash before emitting a result event. In that case fall
+			// back to the LAST non-empty session_id (not the first), since later
+			// events reflect any in-stream session switch.
+			name: "no result event: falls back to last non-empty session ID",
+			messages: []services.ClaudeMessage{
+				services.SystemMessage{Type: "system", Subtype: "hook_started", SessionID: "ephemeral-hook-id"},
+				services.SystemMessage{Type: "system", Subtype: "init", SessionID: "real-id"},
+				services.AssistantMessage{Type: "assistant", SessionID: "real-id"},
+			},
+			expected: "real-id",
+		},
+		{
+			// Defensive: a malformed/empty result event must not blank out a
+			// perfectly good session id from earlier events.
+			name: "result event with empty session ID falls back to last non-empty",
+			messages: []services.ClaudeMessage{
+				services.SystemMessage{Type: "system", Subtype: "init", SessionID: "real-id"},
+				services.AssistantMessage{Type: "assistant", SessionID: "real-id"},
+				services.ResultMessage{Type: "result", Subtype: "success", SessionID: ""},
+			},
+			expected: "real-id",
+		},
 	}
 
 	for _, tt := range tests {
@@ -506,6 +562,50 @@ func TestClaudeService_extractSessionID(t *testing.T) {
 				t.Errorf("Expected %q, got %q", tt.expected, result)
 			}
 		})
+	}
+}
+
+// TestClaudeService_extractSessionID_CapturedResumeOutput replays the exact
+// stream-json line ordering observed when Claude Code 2.1.139 is invoked with
+// `--resume <id> -p --output-format stream-json --verbose` in a worktree that
+// has a SessionStart hook configured. This is the production failure mode
+// reported by self-hosted customers: the first session_id in the stream is the
+// CLI's ephemeral bootstrap id, the resumed/on-disk id only appears from the
+// system init event onward. With the pre-fix logic this test would have
+// returned the ephemeral id and the next --resume would have failed with
+// "No conversation found with session ID".
+func TestClaudeService_extractSessionID_CapturedResumeOutput(t *testing.T) {
+	mockClient := &services.MockClaudeClient{}
+	service := NewClaudeService(mockClient, "/tmp", "", nil, nil)
+
+	const ephemeralHookSessionID = "d4fc5e9b-9b59-48d2-adea-681896611b37"
+	const resumedOnDiskSessionID = "db36dd99-af77-4503-8858-fe703fac288f"
+
+	// Verbatim line ordering captured from `claude --resume <id>`.
+	raw := strings.Join([]string{
+		`{"type":"system","subtype":"hook_started","hook_id":"4b73fc00","hook_name":"SessionStart:resume","hook_event":"SessionStart","uuid":"7804a4d3","session_id":"` + ephemeralHookSessionID + `"}`,
+		`{"type":"system","subtype":"hook_response","hook_id":"4b73fc00","hook_name":"SessionStart:resume","hook_event":"SessionStart","output":"","stdout":"","stderr":"","exit_code":0,"outcome":"success","uuid":"2ea6662d","session_id":"` + ephemeralHookSessionID + `"}`,
+		`{"type":"system","subtype":"init","cwd":"/work","session_id":"` + resumedOnDiskSessionID + `","tools":[]}`,
+		`{"type":"assistant","message":{"id":"msg_01","type":"message","content":[{"type":"text","text":"ping"}]},"session_id":"` + resumedOnDiskSessionID + `"}`,
+		`{"type":"result","subtype":"success","is_error":false,"num_turns":1,"result":"ping","session_id":"` + resumedOnDiskSessionID + `","total_cost_usd":0.01}`,
+	}, "\n")
+
+	messages, err := services.MapClaudeOutputToMessages(raw)
+	if err != nil {
+		t.Fatalf("failed to parse captured output: %v", err)
+	}
+
+	got := service.extractSessionID(messages)
+	if got != resumedOnDiskSessionID {
+		t.Fatalf("extractSessionID returned %q, want %q (resumed on-disk id). "+
+			"Pre-fix logic returned the leading hook_started session_id, which caused "+
+			"the next --resume call to fail with 'No conversation found with session ID'.",
+			got, resumedOnDiskSessionID)
+	}
+
+	if got == ephemeralHookSessionID {
+		t.Fatalf("extractSessionID returned the ephemeral hook id %q — this is the production bug; "+
+			"the resumed/on-disk id %q must be used instead", got, resumedOnDiskSessionID)
 	}
 }
 
