@@ -133,12 +133,12 @@ func (g *GitUseCase) ValidateGitEnvironment() error {
 		return fmt.Errorf("git repository must have a remote configured: %w", err)
 	}
 
-	// Determine the forge provider (GitHub via gh, GitLab via glab) from the
-	// remote URL and the NAIRI_FORGE override. Fails loudly for self-hosted hosts
-	// that need an explicit NAIRI_FORGE rather than guessing.
+	// Determine the forge provider (GitHub via gh, GitLab via glab). github.com
+	// and gitlab.com are auto-detected; any other host defaults to GitHub unless
+	// NAIRI_FORGE=gitlab is set. Only errors on an invalid NAIRI_FORGE value.
 	if err := g.gitClient.ConfigureForgeFromRemote(); err != nil {
 		log.Error("❌ Could not determine git forge provider: %v", err)
-		return fmt.Errorf("could not determine git forge provider (set NAIRI_FORGE=github|gitlab): %w", err)
+		return fmt.Errorf("could not determine git forge provider: %w", err)
 	}
 
 	// Check if the forge CLI is available and authenticated (for PR/MR creation)

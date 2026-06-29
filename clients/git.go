@@ -48,9 +48,8 @@ func (g *GitClient) ForgeName() string {
 }
 
 // ConfigureForgeFromRemote inspects the origin remote (and the NAIRI_FORGE
-// override) and sets the forge provider accordingly. It returns a clear error
-// when the forge cannot be determined (e.g. a self-hosted host with no
-// NAIRI_FORGE override) so startup can fail loudly rather than guess.
+// override) and sets the forge provider accordingly. It is called on startup and
+// on every token-refresh reload, so it only logs when the provider changes.
 func (g *GitClient) ConfigureForgeFromRemote() error {
 	rawRemoteURL, err := g.getRawRemoteURL()
 	if err != nil {
@@ -60,8 +59,10 @@ func (g *GitClient) ConfigureForgeFromRemote() error {
 	if err != nil {
 		return err
 	}
+	if provider.Name() != g.forge.Name() {
+		log.Info("🔱 Git forge provider: %s (CLI: %s)", provider.Name(), provider.CLIName())
+	}
 	g.forge = provider
-	log.Info("🔱 Git forge provider: %s (CLI: %s)", provider.Name(), provider.CLIName())
 	return nil
 }
 

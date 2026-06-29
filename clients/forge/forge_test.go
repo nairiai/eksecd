@@ -167,10 +167,19 @@ func TestDetect(t *testing.T) {
 			t.Fatalf("got p=%v err=%v", p, err)
 		}
 	})
-	t.Run("unknown host fails loudly", func(t *testing.T) {
+	t.Run("gitlab.com auto", func(t *testing.T) {
 		t.Setenv("NAIRI_FORGE", "")
-		if _, err := Detect("https://code.acme.com/group/repo.git"); err == nil {
-			t.Fatal("expected error for unknown self-hosted host without NAIRI_FORGE")
+		t.Setenv("NAIRI_GIT_HOST", "")
+		p, err := Detect("https://gitlab.com/group/sub/repo.git")
+		if err != nil || p.Name() != "gitlab" {
+			t.Fatalf("got p=%v err=%v", p, err)
+		}
+	})
+	t.Run("unknown host defaults to github (GHES-compatible)", func(t *testing.T) {
+		t.Setenv("NAIRI_FORGE", "")
+		p, err := Detect("https://github.acme.com/owner/repo.git")
+		if err != nil || p.Name() != "github" {
+			t.Fatalf("expected github default for unknown host, got p=%v err=%v", p, err)
 		}
 	})
 	t.Run("NAIRI_FORGE=gitlab forces gitlab", func(t *testing.T) {

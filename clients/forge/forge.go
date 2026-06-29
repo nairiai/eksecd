@@ -52,11 +52,13 @@ type Provider interface {
 
 // Detect selects the forge provider for a remote.
 //
-//   - NAIRI_FORGE=github|gitlab forces the provider (used for self-hosted hosts
-//     whose domain doesn't contain "github"/"gitlab", e.g. code.acme.com).
-//   - Otherwise the remote host is inspected: github.com (exact) → GitHub.
-//   - Everything else fails loudly rather than guessing, because a substring
-//     match on "gitlab" is unreliable for custom self-hosted domains.
+//   - NAIRI_FORGE=github|gitlab forces the provider (required for self-hosted
+//     GitLab, e.g. code.acme.com). An unrecognized value is an error.
+//   - Otherwise the host is auto-detected: github.com → GitHub, gitlab.com →
+//     GitLab.
+//   - Any other (self-hosted) host defaults to GitHub, preserving existing
+//     behavior for GitHub Enterprise Server. GitLab is never inferred from a
+//     substring — self-hosted GitLab must set NAIRI_FORGE=gitlab.
 func Detect(remoteURL string) (Provider, error) {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("NAIRI_FORGE"))) {
 	case "github":
@@ -76,12 +78,14 @@ func Detect(remoteURL string) (Provider, error) {
 
 	host, _, err := parseHostAndSegments(remoteURL)
 	if err != nil {
-		return nil, fmt.Errorf("could not parse remote URL %q to determine forge: %w; set NAIRI_FORGE=github|gitlab", remoteURL, err)
-	}
-	if hostWithoutPort(host) == "github.com" {
+		// Unparseable remote: default to GitHub (gh operations don't need the
+		// parse) rather than blocking startup.
 		return NewGitHubProvider(), nil
 	}
-	return nil, fmt.Errorf("could not determine git forge from remote host %q; set NAIRI_FORGE=github or NAIRI_FORGE=gitlab", host)
+	if hostWithoutPort(host) == "gitlab.com" {
+		return newGitLabProvider(host), nil
+	}
+	return NewGitHubProvider(), nil
 }
 
 // parseHostAndSegments extracts the host (with optional :port) and the path
