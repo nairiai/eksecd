@@ -9,13 +9,13 @@ import (
 	"strings"
 	"time"
 
+	"nairid/clients/forge"
 	"nairid/core/log"
-
-	"github.com/cenkalti/backoff/v4"
 )
 
 type GitClient struct {
-	getRepoPath func() string // Function to get repository path (allows lazy evaluation)
+	getRepoPath func() string  // Function to get repository path (allows lazy evaluation)
+	forge       forge.Provider // Forge-specific operations (GitHub via gh, GitLab via glab)
 }
 
 // WorktreeInfo contains information about a git worktree
@@ -28,12 +28,47 @@ type WorktreeInfo struct {
 func NewGitClient() *GitClient {
 	return &GitClient{
 		getRepoPath: func() string { return "" }, // Default: no repo path
+		forge:       forge.NewGitHubProvider(),   // Default; overridden by forge detection at startup
 	}
 }
 
 // SetRepoPathProvider sets the function that provides the repository path
 func (g *GitClient) SetRepoPathProvider(provider func() string) {
 	g.getRepoPath = provider
+}
+
+// SetForgeProvider overrides the forge provider (used after startup detection).
+func (g *GitClient) SetForgeProvider(p forge.Provider) {
+	g.forge = p
+}
+
+// ForgeName returns the active forge provider name ("github" | "gitlab").
+func (g *GitClient) ForgeName() string {
+	return g.forge.Name()
+}
+
+// ConfigureForgeFromRemote inspects the origin remote (and the NAIRI_FORGE
+// override) and sets the forge provider accordingly. It returns a clear error
+// when the forge cannot be determined (e.g. a self-hosted host with no
+// NAIRI_FORGE override) so startup can fail loudly rather than guess.
+func (g *GitClient) ConfigureForgeFromRemote() error {
+	rawRemoteURL, err := g.getRawRemoteURL()
+	if err != nil {
+		return fmt.Errorf("failed to read remote URL for forge detection: %w", err)
+	}
+	provider, err := forge.Detect(rawRemoteURL)
+	if err != nil {
+		return err
+	}
+	g.forge = provider
+	log.Info("🔱 Git forge provider: %s (CLI: %s)", provider.Name(), provider.CLIName())
+	return nil
+}
+
+// workDir returns the configured repository path (may be empty, in which case
+// forge CLIs run in the process working directory).
+func (g *GitClient) workDir() string {
+	return g.getRepoPath()
 }
 
 // setWorkDir sets the working directory for a git command if a repo path is configured
@@ -43,108 +78,15 @@ func (g *GitClient) setWorkDir(cmd *exec.Cmd) {
 	}
 }
 
-// isRateLimitError checks if an error is a GitHub API rate limit error
-func isRateLimitError(err error, output string) bool {
-	if err == nil {
-		return false
+// prepareTitleAndBody validates and truncates a PR/MR title, folding any
+// overflow into the front of the description. This is provider-neutral.
+func prepareTitleAndBody(title, body string) (string, string) {
+	v := ValidateAndTruncatePRTitle(title, body)
+	if v.DescriptionPrefix == "" {
+		return v.Title, body
 	}
-
-	errStr := strings.ToLower(err.Error())
-	outputStr := strings.ToLower(output)
-
-	rateLimitPatterns := []string{
-		"rate limit",
-		"secondary rate limit",
-		"abuse detection",
-	}
-
-	for _, pattern := range rateLimitPatterns {
-		if strings.Contains(errStr, pattern) || strings.Contains(outputStr, pattern) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// isRecoverableGHError checks if an error is a recoverable GitHub API error that should be retried
-func isRecoverableGHError(err error, output string) bool {
-	if err == nil {
-		return false
-	}
-
-	if isRateLimitError(err, output) {
-		return true
-	}
-
-	errStr := strings.ToLower(err.Error())
-	outputStr := strings.ToLower(output)
-
-	recoverablePatterns := []string{
-		"timeout",
-		"i/o timeout",
-		"connection timeout",
-		"dial tcp",
-		"context deadline exceeded",
-	}
-
-	for _, pattern := range recoverablePatterns {
-		if strings.Contains(errStr, pattern) || strings.Contains(outputStr, pattern) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// executeWithRetry executes a GitHub CLI command with exponential backoff for recoverable errors.
-// Rate limit errors use a longer backoff (up to 10 minutes) since GitHub rate limits reset on longer windows.
-func (g *GitClient) executeWithRetry(cmd *exec.Cmd, operationName string) ([]byte, error) {
-	var output []byte
-	var err error
-	var rateLimitDetected bool
-
-	retryBackoff := backoff.NewExponentialBackOff()
-	retryBackoff.InitialInterval = 2 * time.Second
-	retryBackoff.MaxInterval = 30 * time.Second
-	retryBackoff.MaxElapsedTime = 2 * time.Minute
-	retryBackoff.Multiplier = 2
-
-	// Preserve original working directory for retries
-	originalDir := cmd.Dir
-
-	retryOperation := func() error {
-		output, err = cmd.CombinedOutput()
-
-		if err != nil && isRecoverableGHError(err, string(output)) {
-			// On first rate limit detection, extend the backoff parameters
-			if !rateLimitDetected && isRateLimitError(err, string(output)) {
-				rateLimitDetected = true
-				retryBackoff.MaxInterval = 60 * time.Second
-				retryBackoff.MaxElapsedTime = 10 * time.Minute
-				log.Info("⏳ GitHub API rate limit detected for %s, extending retry window to 10 minutes...", operationName)
-			} else {
-				log.Info("⏳ GitHub API recoverable error detected for %s, retrying...", operationName)
-			}
-			// Reset command for retry, preserving working directory
-			cmd = exec.Command(cmd.Args[0], cmd.Args[1:]...)
-			cmd.Dir = originalDir
-			return err // This will trigger a retry
-		}
-
-		return nil // Success or non-recoverable error, stop retrying
-	}
-
-	retryErr := backoff.Retry(retryOperation, retryBackoff)
-	if retryErr != nil {
-		// If we still have the original error, use it
-		if err != nil {
-			return output, err
-		}
-		return output, retryErr
-	}
-
-	return output, err
+	log.Warn("⚠️ PR title exceeded %d characters, truncating to '%s' and moving overflow to description", MaxPRTitleLength, v.Title)
+	return v.Title, v.DescriptionPrefix + body
 }
 
 func (g *GitClient) CheckoutBranch(branchName string) error {
@@ -389,53 +331,27 @@ func (g *GitClient) PushBranch(branchName string) error {
 }
 
 func (g *GitClient) CreatePullRequest(title, body, baseBranch string) (string, error) {
+	return g.createPullRequest(g.workDir(), title, body, baseBranch)
+}
+
+// createPullRequest is the shared implementation for the main repo and worktree
+// variants; workDir selects which directory the forge CLI runs in.
+func (g *GitClient) createPullRequest(workDir, title, body, baseBranch string) (string, error) {
 	log.Info("📋 Starting to create pull request: %s", title)
 
-	// Validate and truncate PR title if necessary
-	validationResult := ValidateAndTruncatePRTitle(title, body)
-
-	// If title was truncated, prepend overflow to description
-	finalBody := body
-	if validationResult.DescriptionPrefix != "" {
-		log.Warn("⚠️ PR title exceeded %d characters, truncating to '%s' and moving overflow to description",
-			MaxGitHubPRTitleLength, validationResult.Title)
-		finalBody = validationResult.DescriptionPrefix + body
-	}
-
-	cmd := exec.Command("gh", "pr", "create", "--title", validationResult.Title, "--body", finalBody, "--base", baseBranch)
-	g.setWorkDir(cmd)
-	output, err := g.executeWithRetry(cmd, "create pull request")
-
+	finalTitle, finalBody := prepareTitleAndBody(title, body)
+	prURL, err := g.forge.CreatePR(workDir, finalTitle, finalBody, baseBranch)
 	if err != nil {
-		log.Error("❌ GitHub PR creation failed for title '%s': %v\nOutput: %s", validationResult.Title, err, string(output))
-		return "", fmt.Errorf("github pr creation failed: %w\nOutput: %s", err, string(output))
+		return "", err
 	}
 
-	// The output contains the PR URL
-	prURL := strings.TrimSpace(string(output))
-
-	log.Info("✅ Successfully created pull request: %s", validationResult.Title)
+	log.Info("✅ Successfully created pull request: %s", finalTitle)
 	log.Info("📋 Completed successfully - created pull request")
 	return prURL, nil
 }
 
 func (g *GitClient) GetPRURL(branchName string) (string, error) {
-	log.Info("📋 Starting to get PR URL for branch: %s", branchName)
-
-	cmd := exec.Command("gh", "pr", "view", branchName, "--json", "url", "--jq", ".url")
-	g.setWorkDir(cmd)
-	output, err := g.executeWithRetry(cmd, "get PR URL")
-
-	if err != nil {
-		log.Error("❌ Failed to get PR URL for branch %s: %v\nOutput: %s", branchName, err, string(output))
-		return "", fmt.Errorf("failed to get PR URL: %w\nOutput: %s", err, string(output))
-	}
-
-	prURL := strings.TrimSpace(string(output))
-
-	log.Info("✅ Successfully got PR URL: %s", prURL)
-	log.Info("📋 Completed successfully - got PR URL")
-	return prURL, nil
+	return g.forge.GetPRURL(g.workDir(), branchName)
 }
 
 func (g *GitClient) GetCurrentBranch() (string, error) {
@@ -597,32 +513,10 @@ func (g *GitClient) HasRemoteRepository() error {
 	return nil
 }
 
-func (g *GitClient) IsGitHubCLIAvailable() error {
-	log.Info("📋 Starting to check GitHub CLI availability")
-
-	// Check if gh command exists
-	cmd := exec.Command("gh", "--version")
-	g.setWorkDir(cmd)
-	output, err := cmd.CombinedOutput()
-
-	if err != nil {
-		log.Error("❌ GitHub CLI not found: %v\nOutput: %s", err, string(output))
-		return fmt.Errorf("github cli (gh) not found: %w\nOutput: %s", err, string(output))
-	}
-
-	// Check if gh is authenticated
-	cmd = exec.Command("gh", "auth", "status")
-	g.setWorkDir(cmd)
-	output, err = cmd.CombinedOutput()
-
-	if err != nil {
-		log.Error("❌ GitHub CLI not authenticated: %v\nOutput: %s", err, string(output))
-		return fmt.Errorf("github cli not authenticated (run 'gh auth login'): %w\nOutput: %s", err, string(output))
-	}
-
-	log.Info("✅ GitHub CLI is available and authenticated")
-	log.Info("📋 Completed successfully - validated GitHub CLI")
-	return nil
+// IsForgeCLIAvailable verifies that the active forge's CLI (gh or glab) is
+// installed and authenticated.
+func (g *GitClient) IsForgeCLIAvailable() error {
+	return g.forge.IsCLIAvailable(g.workDir())
 }
 
 func (g *GitClient) HasUncommittedChanges() (bool, error) {
@@ -653,30 +547,7 @@ func (g *GitClient) HasUncommittedChanges() (bool, error) {
 }
 
 func (g *GitClient) HasExistingPR(branchName string) (bool, error) {
-	log.Info("📋 Starting to check for existing PR for branch: %s", branchName)
-
-	// Use GitHub CLI to list PRs for the current branch
-	cmd := exec.Command("gh", "pr", "list", "--head", branchName, "--json", "number")
-	g.setWorkDir(cmd)
-	output, err := g.executeWithRetry(cmd, "check existing PR")
-
-	if err != nil {
-		log.Error("❌ Failed to check for existing PR for branch %s: %v\nOutput: %s", branchName, err, string(output))
-		return false, fmt.Errorf("failed to check for existing PR: %w\nOutput: %s", err, string(output))
-	}
-
-	// If output is "[]" (empty JSON array), no PRs exist for this branch
-	outputStr := strings.TrimSpace(string(output))
-	hasPR := outputStr != "[]" && outputStr != ""
-
-	if hasPR {
-		log.Info("✅ Found existing PR for branch: %s", branchName)
-	} else {
-		log.Info("✅ No existing PR found for branch: %s", branchName)
-	}
-
-	log.Info("📋 Completed successfully - checked for existing PR")
-	return hasPR, nil
+	return g.forge.HasExistingPR(g.workDir(), branchName)
 }
 
 func (g *GitClient) GetLatestCommitHash() (string, error) {
@@ -728,21 +599,26 @@ func (g *GitClient) GetRemoteURL() (string, error) {
 		return "", fmt.Errorf("failed to get remote URL: %w\nOutput: %s", err, string(output))
 	}
 
-	remoteURL := strings.TrimSpace(string(output))
-
-	// Convert SSH URL to HTTPS if needed for GitHub links
-	if strings.HasPrefix(remoteURL, "git@github.com:") {
-		// Convert git@github.com:owner/repo.git to https://github.com/owner/repo
-		remoteURL = strings.Replace(remoteURL, "git@github.com:", "https://github.com/", 1)
-		remoteURL = strings.TrimSuffix(remoteURL, ".git")
-	} else if strings.HasSuffix(remoteURL, ".git") {
-		// Remove .git suffix from HTTPS URLs
-		remoteURL = strings.TrimSuffix(remoteURL, ".git")
-	}
+	remoteURL := convertSCPToHTTPS(strings.TrimSpace(string(output)))
 
 	log.Info("✅ Remote URL: %s", remoteURL)
 	log.Info("📋 Completed successfully - got remote URL")
 	return remoteURL, nil
+}
+
+// convertSCPToHTTPS converts a scp-style SSH remote (git@host:group/repo.git) to
+// an https URL and strips the trailing ".git". It is host-agnostic, so it works
+// for github.com, gitlab.com, and self-hosted hosts alike.
+func convertSCPToHTTPS(remoteURL string) string {
+	if strings.HasPrefix(remoteURL, "git@") && strings.Contains(remoteURL, ":") && !strings.Contains(remoteURL, "://") {
+		rest := strings.TrimPrefix(remoteURL, "git@") // host:path
+		if colon := strings.Index(rest, ":"); colon != -1 {
+			host := rest[:colon]
+			path := strings.TrimPrefix(rest[colon+1:], "/")
+			remoteURL = "https://" + host + "/" + path
+		}
+	}
+	return strings.TrimSuffix(remoteURL, ".git")
 }
 
 func (g *GitClient) GetRepositoryIdentifier() (string, error) {
@@ -778,93 +654,47 @@ func (g *GitClient) GetRepositoryIdentifier() (string, error) {
 }
 
 func (g *GitClient) GetPRDescription(branchName string) (string, error) {
-	log.Info("📋 Starting to get PR description for branch: %s", branchName)
-
-	cmd := exec.Command("gh", "pr", "view", branchName, "--json", "body", "--jq", ".body")
-	g.setWorkDir(cmd)
-	output, err := g.executeWithRetry(cmd, "get PR description")
-
-	if err != nil {
-		log.Error("❌ Failed to get PR description for branch %s: %v\nOutput: %s", branchName, err, string(output))
-		return "", fmt.Errorf("failed to get PR description: %w\nOutput: %s", err, string(output))
-	}
-
-	description := strings.TrimSpace(string(output))
-	log.Info("✅ Successfully got PR description")
-	log.Info("📋 Completed successfully - got PR description")
-	return description, nil
+	return g.forge.GetPRDescription(g.workDir(), branchName)
 }
 
 func (g *GitClient) UpdatePRDescription(branchName, newDescription string) error {
-	log.Info("📋 Starting to update PR description for branch: %s", branchName)
-
-	cmd := exec.Command("gh", "pr", "edit", branchName, "--body", newDescription)
-	g.setWorkDir(cmd)
-	output, err := g.executeWithRetry(cmd, "update PR description")
-
-	if err != nil {
-		log.Error("❌ Failed to update PR description for branch %s: %v\nOutput: %s", branchName, err, string(output))
-		return fmt.Errorf("failed to update PR description: %w\nOutput: %s", err, string(output))
-	}
-
-	log.Info("✅ Successfully updated PR description")
-	log.Info("📋 Completed successfully - updated PR description")
-	return nil
+	return g.forge.UpdatePRDescription(g.workDir(), branchName, newDescription)
 }
 
 func (g *GitClient) GetPRTitle(branchName string) (string, error) {
-	log.Info("📋 Starting to get PR title for branch: %s", branchName)
-
-	cmd := exec.Command("gh", "pr", "view", branchName, "--json", "title", "--jq", ".title")
-	g.setWorkDir(cmd)
-	output, err := g.executeWithRetry(cmd, "get PR title")
-
-	if err != nil {
-		log.Error("❌ Failed to get PR title for branch %s: %v\nOutput: %s", branchName, err, string(output))
-		return "", fmt.Errorf("failed to get PR title: %w\nOutput: %s", err, string(output))
-	}
-
-	title := strings.TrimSpace(string(output))
-	log.Info("✅ Successfully got PR title: %s", title)
-	log.Info("📋 Completed successfully - got PR title")
-	return title, nil
+	return g.forge.GetPRTitle(g.workDir(), branchName)
 }
 
 func (g *GitClient) UpdatePRTitle(branchName, newTitle string) error {
+	return g.updatePRTitle(g.workDir(), branchName, newTitle)
+}
+
+// updatePRTitle is the shared implementation for the main repo and worktree
+// title updates. When the new title overflows the length cap, the overflow is
+// folded into the front of the existing description before the title is set.
+func (g *GitClient) updatePRTitle(workDir, branchName, newTitle string) error {
 	log.Info("📋 Starting to update PR title for branch: %s", branchName)
 
 	// Get current description first in case we need to prepend overflow
-	currentDescription, err := g.GetPRDescription(branchName)
+	currentDescription, err := g.forge.GetPRDescription(workDir, branchName)
 	if err != nil {
 		log.Warn("⚠️ Failed to get current PR description, continuing with title update only: %v", err)
 		currentDescription = ""
 	}
 
-	// Validate and truncate PR title if necessary
 	validationResult := ValidateAndTruncatePRTitle(newTitle, currentDescription)
-
-	// If title was truncated, prepend overflow to description
 	if validationResult.DescriptionPrefix != "" {
 		log.Warn("⚠️ PR title exceeded %d characters, truncating to '%s' and moving overflow to description",
-			MaxGitHubPRTitleLength, validationResult.Title)
-
+			MaxPRTitleLength, validationResult.Title)
 		newDescription := validationResult.DescriptionPrefix + currentDescription
-
-		// Update both title and description
-		if err := g.UpdatePRDescription(branchName, newDescription); err != nil {
+		if err := g.forge.UpdatePRDescription(workDir, branchName, newDescription); err != nil {
 			log.Error("❌ Failed to update PR description with overflow text: %v", err)
 			return fmt.Errorf("failed to update PR description with overflow: %w", err)
 		}
 	}
 
-	// Update the title
-	cmd := exec.Command("gh", "pr", "edit", branchName, "--title", validationResult.Title)
-	g.setWorkDir(cmd)
-	output, err := g.executeWithRetry(cmd, "update PR title")
-
-	if err != nil {
-		log.Error("❌ Failed to update PR title for branch %s: %v\nOutput: %s", branchName, err, string(output))
-		return fmt.Errorf("failed to update PR title: %w\nOutput: %s", err, string(output))
+	if err := g.forge.UpdatePRTitle(workDir, branchName, validationResult.Title); err != nil {
+		return err
 	}
 
 	log.Info("✅ Successfully updated PR title")
@@ -873,53 +703,21 @@ func (g *GitClient) UpdatePRTitle(branchName, newTitle string) error {
 }
 
 func (g *GitClient) GetPRState(branchName string) (string, error) {
-	log.Info("📋 Starting to get PR state for branch: %s", branchName)
-
-	cmd := exec.Command("gh", "pr", "view", branchName, "--json", "state", "--jq", ".state")
-	g.setWorkDir(cmd)
-	output, err := g.executeWithRetry(cmd, "get PR state")
-
-	if err != nil {
-		log.Error("❌ Failed to get PR state for branch %s: %v\nOutput: %s", branchName, err, string(output))
-		return "", fmt.Errorf("failed to get PR state: %w\nOutput: %s", err, string(output))
-	}
-
-	state := strings.TrimSpace(string(output))
-	log.Info("✅ Retrieved PR state: %s", state)
-	log.Info("📋 Completed successfully - got PR state")
-	return strings.ToLower(state), nil
+	return g.forge.GetPRState(g.workDir(), branchName)
 }
 
 func (g *GitClient) ExtractPRIDFromURL(prURL string) string {
-	if prURL == "" {
-		return ""
-	}
-
-	// Extract PR number from URL like https://github.com/user/repo/pull/1234
-	parts := strings.Split(prURL, "/")
-	if len(parts) > 0 && parts[len(parts)-1] != "" {
-		return parts[len(parts)-1]
-	}
-
-	return ""
+	return g.forge.ExtractPRIDFromURL(prURL)
 }
 
 func (g *GitClient) GetPRStateByID(prID string) (string, error) {
-	log.Info("📋 Starting to get PR state by ID: %s", prID)
+	return g.forge.GetPRStateByID(g.workDir(), prID)
+}
 
-	cmd := exec.Command("gh", "pr", "view", prID, "--json", "state", "--jq", ".state")
-	g.setWorkDir(cmd)
-	output, err := g.executeWithRetry(cmd, "get PR state by ID")
-
-	if err != nil {
-		log.Error("❌ Failed to get PR state for PR ID %s: %v\nOutput: %s", prID, err, string(output))
-		return "", fmt.Errorf("failed to get PR state by ID: %w\nOutput: %s", err, string(output))
-	}
-
-	state := strings.TrimSpace(string(output))
-	log.Info("✅ Retrieved PR state by ID: %s", state)
-	log.Info("📋 Completed successfully - got PR state by ID")
-	return strings.ToLower(state), nil
+// CommitURL builds a forge-aware commit URL (GitHub: <repo>/commit/<sha>,
+// GitLab: <repo>/-/commit/<sha>).
+func (g *GitClient) CommitURL(repoURL, sha string) string {
+	return g.forge.CommitURL(repoURL, sha)
 }
 
 func (g *GitClient) GetLocalBranches() ([]string, error) {
@@ -1127,64 +925,8 @@ func (g *GitClient) parseRemoteAccessError(err error, output, remoteURL string) 
 	return fmt.Errorf("remote repository access failed for %s: %w\nOutput: %s", remoteURL, err, output)
 }
 
-type RemoteRepoDetails struct {
-	Owner string
-	Repo  string
-}
-
-func (g *GitClient) extractRemoteRepoDetails(remoteURL string) (*RemoteRepoDetails, error) {
-	if strings.HasPrefix(remoteURL, "git@github.com:") {
-		// SSH format: git@github.com:owner/repo.git
-		parts := strings.TrimPrefix(remoteURL, "git@github.com:")
-		parts = strings.TrimSuffix(parts, ".git")
-		pathParts := strings.Split(parts, "/")
-		if len(pathParts) != 2 {
-			return nil, fmt.Errorf("invalid SSH URL format: %s", remoteURL)
-		}
-		return &RemoteRepoDetails{
-			Owner: pathParts[0],
-			Repo:  pathParts[1],
-		}, nil
-	} else if strings.Contains(remoteURL, "github.com") {
-		// HTTPS format: https://github.com/owner/repo.git or https://x-access-token:TOKEN@github.com/owner/repo.git
-		// Extract the path part after github.com
-		var pathPart string
-		if strings.Contains(remoteURL, "@github.com") {
-			// Already has token format
-			parts := strings.Split(remoteURL, "@github.com")
-			if len(parts) != 2 {
-				return nil, fmt.Errorf("invalid HTTPS URL format: %s", remoteURL)
-			}
-			pathPart = parts[1]
-		} else {
-			// Standard HTTPS format
-			parts := strings.Split(remoteURL, "github.com")
-			if len(parts) != 2 {
-				return nil, fmt.Errorf("invalid HTTPS URL format: %s", remoteURL)
-			}
-			pathPart = parts[1]
-		}
-
-		// Remove leading slash and .git suffix
-		pathPart = strings.TrimPrefix(pathPart, "/")
-		pathPart = strings.TrimSuffix(pathPart, ".git")
-
-		pathParts := strings.Split(pathPart, "/")
-		if len(pathParts) != 2 {
-			return nil, fmt.Errorf("invalid HTTPS URL path: %s", pathPart)
-		}
-		return &RemoteRepoDetails{
-			Owner: pathParts[0],
-			Repo:  pathParts[1],
-		}, nil
-	}
-
-	// Not a GitHub repository
-	return nil, nil
-}
-
 func (g *GitClient) UpdateRemoteURLWithToken(token string) error {
-	log.Info("📋 Starting to update remote URL with GitHub token")
+	log.Info("📋 Starting to update remote URL with forge token")
 
 	// Get current remote URL
 	cmd := exec.Command("git", "remote", "get-url", "origin")
@@ -1198,22 +940,18 @@ func (g *GitClient) UpdateRemoteURLWithToken(token string) error {
 	currentURL := strings.TrimSpace(string(output))
 	log.Info("🔍 Current remote URL: %s", currentURL)
 
-	// Extract repository details
-	repoDetails, err := g.extractRemoteRepoDetails(currentURL)
+	// Parse repository details via the active forge provider (handles GitHub
+	// owner/repo and GitLab arbitrary subgroup paths). If the remote can't be
+	// parsed, skip rather than fail the reload (preserves prior resilience).
+	repoDetails, err := g.forge.ParseRemoteURL(currentURL)
 	if err != nil {
-		log.Error("❌ Failed to parse remote URL: %v", err)
-		return fmt.Errorf("failed to parse remote URL: %w", err)
-	}
-
-	if repoDetails == nil {
-		log.Info("⚠️ Not a GitHub repository, skipping token update: %s", currentURL)
+		log.Info("⚠️ Could not parse remote URL for token update, skipping: %v", err)
 		return nil
 	}
 
-	// Construct new URL with token
-	newURL := fmt.Sprintf("https://x-access-token:%s@github.com/%s/%s.git", token, repoDetails.Owner, repoDetails.Repo)
+	// Construct the token-injected URL with the forge-specific auth scheme.
+	newURL := g.forge.BuildAuthenticatedHTTPSURL(repoDetails, token)
 
-	// Update the remote URL
 	cmd = exec.Command("git", "remote", "set-url", "origin", newURL)
 	g.setWorkDir(cmd)
 	output, err = cmd.CombinedOutput()
@@ -1222,7 +960,7 @@ func (g *GitClient) UpdateRemoteURLWithToken(token string) error {
 		return fmt.Errorf("failed to update remote URL: %w\nOutput: %s", err, string(output))
 	}
 
-	log.Info("✅ Successfully updated remote URL with GitHub token for %s/%s", repoDetails.Owner, repoDetails.Repo)
+	log.Info("✅ Successfully updated remote URL with forge token for %s/%s", repoDetails.Owner, repoDetails.Repo)
 	log.Info("📋 Completed successfully - updated remote URL with token")
 	return nil
 }
@@ -1249,26 +987,25 @@ func (g *GitClient) FetchOrigin() error {
 	return nil
 }
 
-// FindPRTemplate searches for GitHub PR template in standard locations
-// Returns the template content if found, empty string otherwise
+// FindPRTemplate searches for a forge PR/MR template in the standard locations
+// for the active forge. Returns the template content if found, empty otherwise.
 func (g *GitClient) FindPRTemplate() (string, error) {
-	log.Info("🔍 Searching for GitHub PR template")
+	return g.findPRTemplate("")
+}
 
-	// Standard locations per GitHub docs
-	// https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/creating-a-pull-request-template-for-your-repository
-	templatePaths := []string{
-		"pull_request_template.md",
-		"PULL_REQUEST_TEMPLATE.md",
-		".github/pull_request_template.md",
-		".github/PULL_REQUEST_TEMPLATE.md",
-		"docs/pull_request_template.md",
-		"docs/PULL_REQUEST_TEMPLATE.md",
-		".github/PULL_REQUEST_TEMPLATE/pull_request_template.md",
-	}
+// findPRTemplate is the shared implementation for the main repo and worktree
+// variants; baseDir is prepended to each candidate path ("" means the process
+// working directory).
+func (g *GitClient) findPRTemplate(baseDir string) (string, error) {
+	log.Info("🔍 Searching for %s PR/MR template", g.forge.Name())
 
-	for _, path := range templatePaths {
-		if content, err := os.ReadFile(path); err == nil {
-			log.Info("✅ Found PR template at: %s", path)
+	for _, path := range g.forge.TemplateSearchPaths() {
+		fullPath := path
+		if baseDir != "" {
+			fullPath = filepath.Join(baseDir, path)
+		}
+		if content, err := os.ReadFile(fullPath); err == nil {
+			log.Info("✅ Found PR template at: %s", fullPath)
 			return strings.TrimSpace(string(content)), nil
 		}
 	}
@@ -1653,15 +1390,7 @@ func (g *GitClient) GetRemoteURLInWorktree(worktreePath string) (string, error) 
 		return "", fmt.Errorf("failed to get remote URL in worktree: %w\nOutput: %s", err, string(output))
 	}
 
-	remoteURL := strings.TrimSpace(string(output))
-
-	// Convert SSH URL to HTTPS if needed for GitHub links
-	if strings.HasPrefix(remoteURL, "git@github.com:") {
-		remoteURL = strings.Replace(remoteURL, "git@github.com:", "https://github.com/", 1)
-		remoteURL = strings.TrimSuffix(remoteURL, ".git")
-	} else if strings.HasSuffix(remoteURL, ".git") {
-		remoteURL = strings.TrimSuffix(remoteURL, ".git")
-	}
+	remoteURL := convertSCPToHTTPS(strings.TrimSpace(string(output)))
 
 	log.Info("✅ Remote URL in worktree: %s", remoteURL)
 	return remoteURL, nil
@@ -1669,117 +1398,17 @@ func (g *GitClient) GetRemoteURLInWorktree(worktreePath string) (string, error) 
 
 // HasExistingPRInWorktree checks if a PR already exists for a branch from the worktree context
 func (g *GitClient) HasExistingPRInWorktree(worktreePath, branchName string) (bool, error) {
-	log.Info("📋 Starting to check for existing PR for branch %s in worktree: %s", branchName, worktreePath)
-
-	cmd := exec.Command("gh", "pr", "list", "--head", branchName, "--json", "number")
-	cmd.Dir = worktreePath
-	output, err := g.executeWithRetryInDir(cmd, worktreePath, "check existing PR")
-
-	if err != nil {
-		log.Error("❌ Failed to check for existing PR: %v\nOutput: %s", err, string(output))
-		return false, fmt.Errorf("failed to check for existing PR: %w\nOutput: %s", err, string(output))
-	}
-
-	outputStr := strings.TrimSpace(string(output))
-	hasPR := outputStr != "[]" && outputStr != ""
-
-	if hasPR {
-		log.Info("✅ Found existing PR for branch: %s", branchName)
-	} else {
-		log.Info("✅ No existing PR found for branch: %s", branchName)
-	}
-
-	return hasPR, nil
-}
-
-// executeWithRetryInDir is like executeWithRetry but with explicit working directory.
-// Rate limit errors use a longer backoff (up to 10 minutes) since GitHub rate limits reset on longer windows.
-func (g *GitClient) executeWithRetryInDir(cmd *exec.Cmd, workDir, operationName string) ([]byte, error) {
-	var output []byte
-	var err error
-	var rateLimitDetected bool
-
-	retryBackoff := backoff.NewExponentialBackOff()
-	retryBackoff.InitialInterval = 2 * time.Second
-	retryBackoff.MaxInterval = 30 * time.Second
-	retryBackoff.MaxElapsedTime = 2 * time.Minute
-	retryBackoff.Multiplier = 2
-
-	retryOperation := func() error {
-		output, err = cmd.CombinedOutput()
-
-		if err != nil && isRecoverableGHError(err, string(output)) {
-			// On first rate limit detection, extend the backoff parameters
-			if !rateLimitDetected && isRateLimitError(err, string(output)) {
-				rateLimitDetected = true
-				retryBackoff.MaxInterval = 60 * time.Second
-				retryBackoff.MaxElapsedTime = 10 * time.Minute
-				log.Info("⏳ GitHub API rate limit detected for %s, extending retry window to 10 minutes...", operationName)
-			} else {
-				log.Info("⏳ GitHub API recoverable error detected for %s, retrying...", operationName)
-			}
-			cmd = exec.Command(cmd.Args[0], cmd.Args[1:]...)
-			cmd.Dir = workDir
-			return err
-		}
-
-		return nil
-	}
-
-	retryErr := backoff.Retry(retryOperation, retryBackoff)
-	if retryErr != nil {
-		if err != nil {
-			return output, err
-		}
-		return output, retryErr
-	}
-
-	return output, err
+	return g.forge.HasExistingPR(worktreePath, branchName)
 }
 
 // CreatePullRequestInWorktree creates a pull request from the specified worktree context
 func (g *GitClient) CreatePullRequestInWorktree(worktreePath, title, body, baseBranch string) (string, error) {
-	log.Info("📋 Starting to create pull request from worktree: %s", worktreePath)
-
-	// Validate and truncate PR title if necessary
-	validationResult := ValidateAndTruncatePRTitle(title, body)
-
-	finalBody := body
-	if validationResult.DescriptionPrefix != "" {
-		log.Warn("⚠️ PR title exceeded %d characters, truncating", MaxGitHubPRTitleLength)
-		finalBody = validationResult.DescriptionPrefix + body
-	}
-
-	cmd := exec.Command("gh", "pr", "create", "--title", validationResult.Title, "--body", finalBody, "--base", baseBranch)
-	cmd.Dir = worktreePath
-	output, err := g.executeWithRetryInDir(cmd, worktreePath, "create pull request")
-
-	if err != nil {
-		log.Error("❌ GitHub PR creation failed: %v\nOutput: %s", err, string(output))
-		return "", fmt.Errorf("github pr creation failed: %w\nOutput: %s", err, string(output))
-	}
-
-	prURL := strings.TrimSpace(string(output))
-	log.Info("✅ Successfully created pull request: %s", prURL)
-	return prURL, nil
+	return g.createPullRequest(worktreePath, title, body, baseBranch)
 }
 
 // GetPRURLInWorktree gets the PR URL for a branch from the worktree context
 func (g *GitClient) GetPRURLInWorktree(worktreePath, branchName string) (string, error) {
-	log.Info("📋 Starting to get PR URL for branch %s from worktree: %s", branchName, worktreePath)
-
-	cmd := exec.Command("gh", "pr", "view", branchName, "--json", "url", "--jq", ".url")
-	cmd.Dir = worktreePath
-	output, err := g.executeWithRetryInDir(cmd, worktreePath, "get PR URL")
-
-	if err != nil {
-		log.Error("❌ Failed to get PR URL: %v\nOutput: %s", err, string(output))
-		return "", fmt.Errorf("failed to get PR URL: %w\nOutput: %s", err, string(output))
-	}
-
-	prURL := strings.TrimSpace(string(output))
-	log.Info("✅ PR URL: %s", prURL)
-	return prURL, nil
+	return g.forge.GetPRURL(worktreePath, branchName)
 }
 
 // GetDefaultBranchInWorktree gets the default branch from the worktree context
@@ -1815,116 +1444,27 @@ func (g *GitClient) GetDefaultBranchInWorktree(worktreePath string) (string, err
 
 // GetPRTitleInWorktree gets the PR title for a branch from the worktree context
 func (g *GitClient) GetPRTitleInWorktree(worktreePath, branchName string) (string, error) {
-	log.Info("📋 Starting to get PR title for branch %s from worktree: %s", branchName, worktreePath)
-
-	cmd := exec.Command("gh", "pr", "view", branchName, "--json", "title", "--jq", ".title")
-	cmd.Dir = worktreePath
-	output, err := g.executeWithRetryInDir(cmd, worktreePath, "get PR title")
-
-	if err != nil {
-		log.Error("❌ Failed to get PR title: %v\nOutput: %s", err, string(output))
-		return "", fmt.Errorf("failed to get PR title: %w\nOutput: %s", err, string(output))
-	}
-
-	title := strings.TrimSpace(string(output))
-	log.Info("✅ PR title: %s", title)
-	return title, nil
+	return g.forge.GetPRTitle(worktreePath, branchName)
 }
 
 // GetPRDescriptionInWorktree gets the PR description for a branch from the worktree context
 func (g *GitClient) GetPRDescriptionInWorktree(worktreePath, branchName string) (string, error) {
-	log.Info("📋 Starting to get PR description for branch %s from worktree: %s", branchName, worktreePath)
-
-	cmd := exec.Command("gh", "pr", "view", branchName, "--json", "body", "--jq", ".body")
-	cmd.Dir = worktreePath
-	output, err := g.executeWithRetryInDir(cmd, worktreePath, "get PR description")
-
-	if err != nil {
-		log.Error("❌ Failed to get PR description: %v\nOutput: %s", err, string(output))
-		return "", fmt.Errorf("failed to get PR description: %w\nOutput: %s", err, string(output))
-	}
-
-	description := strings.TrimSpace(string(output))
-	log.Info("✅ Got PR description")
-	return description, nil
+	return g.forge.GetPRDescription(worktreePath, branchName)
 }
 
 // UpdatePRTitleInWorktree updates the PR title for a branch from the worktree context
 func (g *GitClient) UpdatePRTitleInWorktree(worktreePath, branchName, newTitle string) error {
-	log.Info("📋 Starting to update PR title for branch %s from worktree: %s", branchName, worktreePath)
-
-	// Get current description first in case we need to prepend overflow
-	currentDescription, err := g.GetPRDescriptionInWorktree(worktreePath, branchName)
-	if err != nil {
-		log.Warn("⚠️ Failed to get current PR description: %v", err)
-		currentDescription = ""
-	}
-
-	// Validate and truncate PR title if necessary
-	validationResult := ValidateAndTruncatePRTitle(newTitle, currentDescription)
-
-	if validationResult.DescriptionPrefix != "" {
-		log.Warn("⚠️ PR title exceeded %d characters, truncating", MaxGitHubPRTitleLength)
-		newDescription := validationResult.DescriptionPrefix + currentDescription
-		if err := g.UpdatePRDescriptionInWorktree(worktreePath, branchName, newDescription); err != nil {
-			return fmt.Errorf("failed to update PR description with overflow: %w", err)
-		}
-	}
-
-	cmd := exec.Command("gh", "pr", "edit", branchName, "--title", validationResult.Title)
-	cmd.Dir = worktreePath
-	output, err := g.executeWithRetryInDir(cmd, worktreePath, "update PR title")
-
-	if err != nil {
-		log.Error("❌ Failed to update PR title: %v\nOutput: %s", err, string(output))
-		return fmt.Errorf("failed to update PR title: %w\nOutput: %s", err, string(output))
-	}
-
-	log.Info("✅ Successfully updated PR title")
-	return nil
+	return g.updatePRTitle(worktreePath, branchName, newTitle)
 }
 
 // UpdatePRDescriptionInWorktree updates the PR description for a branch from the worktree context
 func (g *GitClient) UpdatePRDescriptionInWorktree(worktreePath, branchName, newDescription string) error {
-	log.Info("📋 Starting to update PR description for branch %s from worktree: %s", branchName, worktreePath)
-
-	cmd := exec.Command("gh", "pr", "edit", branchName, "--body", newDescription)
-	cmd.Dir = worktreePath
-	output, err := g.executeWithRetryInDir(cmd, worktreePath, "update PR description")
-
-	if err != nil {
-		log.Error("❌ Failed to update PR description: %v\nOutput: %s", err, string(output))
-		return fmt.Errorf("failed to update PR description: %w\nOutput: %s", err, string(output))
-	}
-
-	log.Info("✅ Successfully updated PR description")
-	return nil
+	return g.forge.UpdatePRDescription(worktreePath, branchName, newDescription)
 }
 
-// FindPRTemplateInWorktree searches for GitHub PR template in the worktree
+// FindPRTemplateInWorktree searches for a forge PR/MR template in the worktree
 func (g *GitClient) FindPRTemplateInWorktree(worktreePath string) (string, error) {
-	log.Info("🔍 Searching for GitHub PR template in worktree: %s", worktreePath)
-
-	templatePaths := []string{
-		"pull_request_template.md",
-		"PULL_REQUEST_TEMPLATE.md",
-		".github/pull_request_template.md",
-		".github/PULL_REQUEST_TEMPLATE.md",
-		"docs/pull_request_template.md",
-		"docs/PULL_REQUEST_TEMPLATE.md",
-		".github/PULL_REQUEST_TEMPLATE/pull_request_template.md",
-	}
-
-	for _, path := range templatePaths {
-		fullPath := filepath.Join(worktreePath, path)
-		if content, err := os.ReadFile(fullPath); err == nil {
-			log.Info("✅ Found PR template at: %s", fullPath)
-			return strings.TrimSpace(string(content)), nil
-		}
-	}
-
-	log.Info("ℹ️ No PR template found in worktree")
-	return "", nil
+	return g.findPRTemplate(worktreePath)
 }
 
 // =============================================================================

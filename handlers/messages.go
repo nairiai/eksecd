@@ -1111,27 +1111,36 @@ func extractPRNumber(prURL string) string {
 	return ""
 }
 
-// stripAccessTokenFromURL removes x-access-token authentication from URLs
-// Converts: https://x-access-token:TOKEN@github.com/owner/repo
-// To: https://github.com/owner/repo
+// stripAccessTokenFromURL removes any embedded userinfo (user:pass@) from a URL,
+// covering both GitHub's "x-access-token:TOKEN@" and GitLab's "oauth2:TOKEN@"
+// forms. It parses the authority rather than splitting on "@" so that an "@" in
+// a later path segment is not mistaken for credentials.
+//
+//	https://x-access-token:TOKEN@github.com/owner/repo      → https://github.com/owner/repo
+//	https://oauth2:TOKEN@gitlab.example.com/group/sub/repo  → https://gitlab.example.com/group/sub/repo
 func stripAccessTokenFromURL(url string) string {
 	if url == "" {
 		return ""
 	}
 
-	// Check if URL contains x-access-token
-	if strings.Contains(url, "x-access-token") && strings.Contains(url, "@") {
-		// Split by @ to separate credentials from host
-		parts := strings.Split(url, "@")
-		if len(parts) >= 2 {
-			// Take everything after the last @ symbol (handles multiple @ symbols)
-			hostAndPath := parts[len(parts)-1]
-			// Reconstruct URL with https://
-			return "https://" + hostAndPath
-		}
+	schemeIdx := strings.Index(url, "://")
+	if schemeIdx == -1 {
+		return url
 	}
 
-	return url
+	rest := url[schemeIdx+3:]
+	// Userinfo, if present, lives in the authority (before the first "/").
+	authorityEnd := strings.Index(rest, "/")
+	authority := rest
+	if authorityEnd != -1 {
+		authority = rest[:authorityEnd]
+	}
+	at := strings.LastIndex(authority, "@")
+	if at == -1 {
+		return url
+	}
+
+	return url[:schemeIdx+3] + rest[at+1:]
 }
 
 func (mh *MessageHandler) sendGitActivitySystemMessage(
@@ -1158,7 +1167,7 @@ func (mh *MessageHandler) sendGitActivitySystemMessage(
 		}
 		// Strip access token from repository URL before sending
 		cleanRepoURL := stripAccessTokenFromURL(commitResult.RepositoryURL)
-		commitURL := fmt.Sprintf("%s/commit/%s", cleanRepoURL, commitResult.CommitHash)
+		commitURL := mh.gitUseCase.CommitURL(cleanRepoURL, commitResult.CommitHash)
 		message := fmt.Sprintf("New commit added: [%s](%s)", shortHash, commitURL)
 
 		// Add PR link if available

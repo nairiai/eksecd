@@ -38,16 +38,16 @@ import (
 )
 
 type CmdRunner struct {
-	messageHandler  *handlers.MessageHandler
-	messageSender   *handlers.MessageSender
-	connectionState *handlers.ConnectionState
-	gitUseCase      *usecases.GitUseCase
-	appState        *models.AppState
-	rotatingWriter  *log.RotatingWriter
-	envManager      *env.EnvManager
-	agentID         string
-	agentsApiClient *clients.AgentsApiClient
-	wsURL           string
+	messageHandler    *handlers.MessageHandler
+	messageSender     *handlers.MessageSender
+	connectionState   *handlers.ConnectionState
+	gitUseCase        *usecases.GitUseCase
+	appState          *models.AppState
+	rotatingWriter    *log.RotatingWriter
+	envManager        *env.EnvManager
+	agentID           string
+	agentsApiClient   *clients.AgentsApiClient
+	wsURL             string
 	nairiAPIKey       string
 	instanceNamespace string // per-instance namespace for path isolation
 	dirLock           *utils.DirLock
@@ -682,9 +682,9 @@ func NewCmdRunner(agentType, permissionMode, model, repoPath string) (*CmdRunner
 		log.Info("🏊 Worktree pool initialized (target size: %d)", poolSize)
 	}
 
-	// Register GitHub token update hook
-	envManager.RegisterReloadHook(gitUseCase.GithubTokenUpdateHook)
-	log.Info("📎 Registered GitHub token update hook")
+	// Register forge token update hook
+	envManager.RegisterReloadHook(gitUseCase.ForgeTokenUpdateHook)
+	log.Info("📎 Registered forge token update hook")
 
 	// Wait for the worktree pool initial fill to complete before recovering jobs.
 	// This prevents a race condition where the pool's resetMainRepoToDefaultBranch()
@@ -890,11 +890,11 @@ func main() {
 
 	// Validate Git environment and cleanup stale branches/worktrees (only if in repo mode)
 	if repoCtx.IsRepoMode {
-		// Apply the latest GitHub token to the git remote URL before validation.
+		// Apply the latest forge token to the git remote URL before validation.
 		// The periodic refresh hook only fires after 1 minute, but we need the token
 		// applied now so ValidateRemoteAccess() doesn't fail with a stale token
 		// baked into the remote URL from a previous session.
-		cmdRunner.gitUseCase.GithubTokenUpdateHook()
+		cmdRunner.gitUseCase.ForgeTokenUpdateHook()
 
 		err = cmdRunner.gitUseCase.ValidateGitEnvironment()
 		if err != nil {

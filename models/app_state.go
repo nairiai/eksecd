@@ -34,7 +34,7 @@ type JobData struct {
 	BranchName         string    `json:"branch_name"`
 	WorktreePath       string    `json:"worktree_path,omitempty"` // Path to the job's git worktree (empty if using main repo)
 	ClaudeSessionID    string    `json:"claude_session_id"`
-	PullRequestID      string    `json:"pull_request_id"`      // GitHub PR number (e.g., "123") - empty if no PR created yet
+	PullRequestID      string    `json:"pull_request_id"`      // Forge PR/MR number (e.g., "123") - empty if no PR created yet
 	LastMessage        string    `json:"last_message"`         // The last message sent to Claude for this job
 	ProcessedMessageID string    `json:"processed_message_id"` // ID of the chat platform message being processed
 	MessageLink        string    `json:"message_link"`         // Link to the original chat message

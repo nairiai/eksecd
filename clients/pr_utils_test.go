@@ -47,7 +47,7 @@ func TestValidateAndTruncatePRTitle_WithinLimit(t *testing.T) {
 	}{
 		{"short title", "feat: add new feature", "This is a test description"},
 		{"empty title", "", "Description"},
-		{"exactly at limit", strings.Repeat("a", MaxGitHubPRTitleLength), "Description"},
+		{"exactly at limit", strings.Repeat("a", MaxPRTitleLength), "Description"},
 		{"one character", "x", "Description"},
 	}
 	for _, tt := range tests {
@@ -64,10 +64,10 @@ func TestValidateAndTruncatePRTitle_WithinLimit(t *testing.T) {
 }
 
 func TestValidateAndTruncatePRTitle_ExceedsLimit(t *testing.T) {
-	title := strings.Repeat("a", MaxGitHubPRTitleLength+50)
+	title := strings.Repeat("a", MaxPRTitleLength+50)
 	result := ValidateAndTruncatePRTitle(title, "desc")
-	if len(result.Title) != MaxGitHubPRTitleLength {
-		t.Errorf("Expected title length %d, got %d", MaxGitHubPRTitleLength, len(result.Title))
+	if len(result.Title) != MaxPRTitleLength {
+		t.Errorf("Expected title length %d, got %d", MaxPRTitleLength, len(result.Title))
 	}
 	if !strings.HasSuffix(result.Title, "...") {
 		t.Errorf("Expected title to end with '...'")
@@ -77,8 +77,8 @@ func TestValidateAndTruncatePRTitle_ExceedsLimit(t *testing.T) {
 	}
 }
 
-func TestMaxGitHubPRTitleLength_Constant(t *testing.T) {
-	if MaxGitHubPRTitleLength != 256 {
-		t.Errorf("MaxGitHubPRTitleLength should be 256, got %d", MaxGitHubPRTitleLength)
+func TestMaxPRTitleLength_Constant(t *testing.T) {
+	if MaxPRTitleLength != 256 {
+		t.Errorf("MaxPRTitleLength should be 256, got %d", MaxPRTitleLength)
 	}
 }

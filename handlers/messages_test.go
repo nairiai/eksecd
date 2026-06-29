@@ -43,6 +43,57 @@ func TestStripAccessTokenFromURL(t *testing.T) {
 	}
 }
 
+func TestStripAccessTokenFromURL_GitLabAndUserinfo(t *testing.T) {
+	tests := []struct {
+		name, input, expected string
+	}{
+		{
+			name:     "GitLab oauth2 userinfo",
+			input:    "https://oauth2:glpat-xxxx@gitlab.example.com/group/sub/repo",
+			expected: "https://gitlab.example.com/group/sub/repo",
+		},
+		{
+			name:     "GitLab oauth2 with path containing @",
+			input:    "https://oauth2:tok@gitlab.example.com/group/repo/-/commit/abc",
+			expected: "https://gitlab.example.com/group/repo/-/commit/abc",
+		},
+		{
+			name:     "self-hosted host with port",
+			input:    "https://oauth2:tok@code.acme.com:8443/group/repo",
+			expected: "https://code.acme.com:8443/group/repo",
+		},
+		{
+			name:     "no scheme returns unchanged",
+			input:    "git@github.com:owner/repo.git",
+			expected: "git@github.com:owner/repo.git",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := stripAccessTokenFromURL(tt.input); got != tt.expected {
+				t.Errorf("stripAccessTokenFromURL(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestExtractPRNumber(t *testing.T) {
+	tests := []struct {
+		name, input, expected string
+	}{
+		{"github pull URL", "https://github.com/owner/repo/pull/1234", "#1234"},
+		{"gitlab MR URL", "https://gitlab.example.com/group/sub/repo/-/merge_requests/56", "#56"},
+		{"empty", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := extractPRNumber(tt.input); got != tt.expected {
+				t.Errorf("extractPRNumber(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestPrependSenderMetadata(t *testing.T) {
 	slackPlatform := models.PlatformSlack
 
