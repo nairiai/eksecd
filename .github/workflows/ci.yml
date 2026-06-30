@@ -17,7 +17,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
+        go-version-file: 'go.mod'
 
     - name: Build eksecd
       run: make build
@@ -32,7 +32,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
+        go-version-file: 'go.mod'
 
     - name: Run eksecd tests
       run: make test
@@ -46,7 +46,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
+        go-version-file: 'go.mod'
     
     - name: Install Go tools
       run: |
@@ -59,7 +59,7 @@ jobs:
         golines --max-len=120 --dry-run .
         
     - name: Run golangci-lint on eksecd
-      uses: golangci/golangci-lint-action@v6
+      uses: golangci/golangci-lint-action@v8
       with:
-        version: latest
+        version: v2.12.2
         args: --timeout=5m
