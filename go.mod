@@ -1,6 +1,6 @@
 module nairid
 
-go 1.24.1
+go 1.25.11
 
 require (
 	github.com/cenkalti/backoff/v4 v4.3.0
@@ -34,9 +34,9 @@ require (
 	github.com/zishang520/socket.io/parsers/socket/v3 v3.0.0-rc.11 // indirect
 	github.com/zishang520/socket.io/servers/engine/v3 v3.0.0-rc.11 // indirect
 	github.com/zishang520/socket.io/servers/socket/v3 v3.0.0-rc.11 // indirect
-	golang.org/x/crypto v0.47.0 // indirect
-	golang.org/x/net v0.49.0 // indirect
-	golang.org/x/sys v0.40.0 // indirect
-	golang.org/x/text v0.33.0 // indirect
+	golang.org/x/crypto v0.52.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 	resty.dev/v3 v3.0.0-beta.6 // indirect
 )
