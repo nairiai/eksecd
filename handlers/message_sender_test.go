@@ -189,10 +189,7 @@ func TestSendHTTPWithRetry_FallbackWaitsForConnection(t *testing.T) {
 
 	// Wait for the fallback to complete
 	deadline := time.After(15 * time.Second)
-	for {
-		if done.Load() {
-			break
-		}
+	for !done.Load() {
 		select {
 		case <-deadline:
 			t.Fatal("timed out waiting for WS fallback to complete after connection established")
