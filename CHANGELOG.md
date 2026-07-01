@@ -1,3 +1,13 @@
+## [v0.0.115] - 2026-07-01
+
+### Security
+
+- Clear Trivy HIGH/CRITICAL findings in Go dependencies and toolchain ([#215](https://github.com/nairiai/nairid/pull/215))
+  - Bumps `golang.org/x/crypto` `v0.47.0` → `v0.52.0` (9 HIGH, `x/crypto/ssh` family) and `golang.org/x/net` `v0.49.0` → `v0.55.0` (6 HIGH, HTML render / HTTP2 / idna); `x/sys` and `x/text` move transitively. All four are indirect dependencies
+  - Bumps the `go` directive `1.24.1` → `1.25.11`, clearing the flagged stdlib CVEs including CRITICAL `CVE-2025-68121` (crypto/tls incorrect certificate validation during TLS session resumption). `1.25.11` is the highest `1.25.x` fix version in the report, so it clears every flagged stdlib CVE
+  - Required CI adjustments downstream of the `go` bump: golangci-lint `v1.64.8` → `v2.12.2` (action `v6` → `v8`, first release built with go1.25), CI now reads the Go version from `go.mod` (`go-version-file`) instead of a stale `1.21` pin, and one staticcheck `QF1006` nit is fixed with a behavior-identical loop rewrite
+  - Scope: source-level findings only (Go modules + stdlib). Runtime-image OS packages and bundled CLI tooling are handled where that image is built
+
 ## [v0.0.114] - 2026-06-15
 
 ### Bugfixes
