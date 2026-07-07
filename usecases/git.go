@@ -19,12 +19,12 @@ import (
 )
 
 type GitUseCase struct {
-	gitClient     *clients.GitClient
-	claudeService services.CLIAgent
-	appState      *models.AppState
-	lastGHToken   string
-	worktreePool  *WorktreePool
-	namespace     string // per-instance namespace for worktree isolation (sanitized agent ID or repo identifier)
+	gitClient      *clients.GitClient
+	claudeService  services.CLIAgent
+	appState       *models.AppState
+	lastForgeToken string
+	worktreePool   *WorktreePool
+	namespace      string // per-instance namespace for worktree isolation (sanitized agent ID or repo identifier)
 }
 
 type CLIAgentResult struct {
@@ -35,7 +35,7 @@ type CLIAgentResult struct {
 type AutoCommitResult struct {
 	JustCreatedPR   bool
 	PullRequestLink string
-	PullRequestID   string // GitHub PR number (e.g., "123")
+	PullRequestID   string // Forge PR/MR number (e.g., "123")
 	CommitHash      string
 	RepositoryURL   string
 	BranchName      string
@@ -62,37 +62,54 @@ func getPlatformFromLink(link string) string {
 	return "Slack thread"
 }
 
-func (g *GitUseCase) GithubTokenUpdateHook() {
+func (g *GitUseCase) ForgeTokenUpdateHook() {
 	// Check if we're in repo mode
 	repoContext := g.appState.GetRepositoryContext()
 	if !repoContext.IsRepoMode {
-		log.Debug("No-repo mode: Skipping GitHub token update hook")
+		log.Debug("No-repo mode: Skipping forge token update hook")
 		return
 	}
 
-	// Get the GitHub token from environment
-	ghToken := os.Getenv("GH_TOKEN")
-	if ghToken == "" {
-		log.Debug("No GH_TOKEN environment variable found, skipping remote URL update")
+	// Ensure the forge provider matches the remote before injecting the token,
+	// so the right auth scheme (x-access-token vs oauth2) and host are used.
+	// Best-effort: ValidateGitEnvironment is the authoritative gate.
+	if err := g.gitClient.ConfigureForgeFromRemote(); err != nil {
+		log.Debug("Forge detection deferred in token hook: %v", err)
+	}
+
+	// Get the forge token from environment (NAIRI_GIT_TOKEN first, GH_TOKEN for
+	// backwards compatibility).
+	token := os.Getenv("NAIRI_GIT_TOKEN")
+	if token == "" {
+		token = os.Getenv("GH_TOKEN")
+	}
+	if token == "" {
+		log.Debug("No NAIRI_GIT_TOKEN/GH_TOKEN environment variable found, skipping remote URL update")
 		return
 	}
 
 	// Only update if token has changed
-	if ghToken == g.lastGHToken {
-		log.Debug("GH_TOKEN unchanged, skipping remote URL update")
+	if token == g.lastForgeToken {
+		log.Debug("Forge token unchanged, skipping remote URL update")
 		return
 	}
 
-	log.Info("🔄 GH_TOKEN changed, updating Git remote URL with new token")
-	if err := g.gitClient.UpdateRemoteURLWithToken(ghToken); err != nil {
+	log.Info("🔄 Forge token changed, updating Git remote URL with new token")
+	if err := g.gitClient.UpdateRemoteURLWithToken(token); err != nil {
 		log.Error("Failed to update Git remote URL with token: %v", err)
 		// Don't fail the entire reload process, just log the error
 		return
 	}
 
 	// Store the new token after successful update
-	g.lastGHToken = ghToken
+	g.lastForgeToken = token
 	log.Info("✅ Successfully updated Git remote URL with refreshed token")
+}
+
+// CommitURL builds a forge-aware commit URL for the active provider (GitHub:
+// <repo>/commit/<sha>, GitLab: <repo>/-/commit/<sha>).
+func (g *GitUseCase) CommitURL(repoURL, sha string) string {
+	return g.gitClient.CommitURL(repoURL, sha)
 }
 
 func (g *GitUseCase) ValidateGitEnvironment() error {
@@ -116,10 +133,18 @@ func (g *GitUseCase) ValidateGitEnvironment() error {
 		return fmt.Errorf("git repository must have a remote configured: %w", err)
 	}
 
-	// Check if GitHub CLI is available (for PR creation)
-	if err := g.gitClient.IsGitHubCLIAvailable(); err != nil {
-		log.Error("❌ GitHub CLI not available: %v", err)
-		return fmt.Errorf("GitHub CLI (gh) must be installed and configured: %w", err)
+	// Determine the forge provider (GitHub via gh, GitLab via glab). github.com
+	// and gitlab.com are auto-detected; any other host defaults to GitHub unless
+	// NAIRI_FORGE=gitlab is set. Only errors on an invalid NAIRI_FORGE value.
+	if err := g.gitClient.ConfigureForgeFromRemote(); err != nil {
+		log.Error("❌ Could not determine git forge provider: %v", err)
+		return fmt.Errorf("could not determine git forge provider: %w", err)
+	}
+
+	// Check if the forge CLI is available and authenticated (for PR/MR creation)
+	if err := g.gitClient.IsForgeCLIAvailable(); err != nil {
+		log.Error("❌ Forge CLI not available: %v", err)
+		return fmt.Errorf("forge CLI (%s) must be installed and configured: %w", g.gitClient.ForgeName(), err)
 	}
 
 	// Validate remote repository access credentials

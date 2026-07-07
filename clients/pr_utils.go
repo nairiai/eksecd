@@ -6,7 +6,9 @@ import (
 )
 
 const (
-	MaxGitHubPRTitleLength = 256
+	// MaxPRTitleLength caps PR/MR titles. 256 is safe for both forges (GitHub
+	// has no hard public cap in practice; GitLab's MR title cap is 255).
+	MaxPRTitleLength = 256
 )
 
 type PRTitleValidationResult struct {
@@ -51,10 +53,10 @@ func SanitizePRTitle(title string) string {
 }
 
 func ValidateAndTruncatePRTitle(title, description string) PRTitleValidationResult {
-	if len(title) <= MaxGitHubPRTitleLength {
+	if len(title) <= MaxPRTitleLength {
 		return PRTitleValidationResult{Title: title, DescriptionPrefix: ""}
 	}
-	truncateAt := MaxGitHubPRTitleLength - 3
+	truncateAt := MaxPRTitleLength - 3
 	truncatedTitle := title[:truncateAt] + "..."
 	overflowText := title[truncateAt:]
 	var descriptionPrefix strings.Builder
