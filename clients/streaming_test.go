@@ -144,3 +144,104 @@ func TestRunCommandStreaming_TimeoutKillsProcessTree(t *testing.T) {
 		t.Errorf("RunCommandStreaming took %v, expected under %v (process group kill may not be working)", elapsed, maxExpected)
 	}
 }
+
+func TestLineStartsWebFetch(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+		want bool
+	}{
+		{"webfetch tool_use", `{"type":"tool_use","name":"WebFetch","input":{"url":"https://x.com"}}`, true},
+		{"bash tool_use", `{"type":"tool_use","name":"Bash","input":{"command":"ls"}}`, false},
+		{"assistant text mentioning WebFetch", `{"type":"text","text":"I will use WebFetch now"}`, false},
+		{"webfetch name without tool_use type", `{"type":"text","name":"WebFetch"}`, false},
+		{"result line", `{"type":"result","is_error":false}`, false},
+	}
+	for _, tc := range cases {
+		if got := lineStartsWebFetch([]byte(tc.line)); got != tc.want {
+			t.Errorf("%s: lineStartsWebFetch(%q) = %v, want %v", tc.name, tc.line, got, tc.want)
+		}
+	}
+}
+
+// TestRunCommandStreaming_WebFetchStallKillsHungProcess simulates the production
+// incident: the agent emits a WebFetch tool_use event and then hangs forever. The
+// stall watchdog must kill the process group quickly and return a stall CommandError
+// instead of blocking until the (much larger) session timeout.
+func TestRunCommandStreaming_WebFetchStallKillsHungProcess(t *testing.T) {
+	original := os.Getenv("AGENT_EXEC_USER")
+	defer func() { _ = os.Setenv("AGENT_EXEC_USER", original) }()
+	_ = os.Unsetenv("AGENT_EXEC_USER")
+	t.Setenv("NAIRI_WEBFETCH_STALL_MS", "1000")
+
+	// Generous ctx timeout so we prove the *watchdog* (not the ctx) fired.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	webfetch := `{"type":"tool_use","name":"WebFetch","input":{"url":"https://example.com"}}`
+	cmd := BuildAgentCommandWithContext(ctx, "sh", "-c",
+		"printf '%s\\n' '"+webfetch+"'; sleep 300 & wait")
+
+	start := time.Now()
+	_, err := RunCommandStreaming(ctx, cmd, nil)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected stall error for hung WebFetch")
+	}
+	cmdErr, ok := err.(*CommandError)
+	if !ok {
+		t.Fatalf("expected *CommandError, got %T", err)
+	}
+	if !strings.Contains(cmdErr.Error(), "WebFetch stalled") {
+		t.Errorf("expected WebFetch stall error, got: %v", cmdErr.Error())
+	}
+	// Watchdog (1s) + tick granularity + WaitDelay should be well under the 60s ctx.
+	if elapsed > WaitDelayAfterKill+10*time.Second {
+		t.Errorf("RunCommandStreaming took %v, expected the watchdog to kill much sooner", elapsed)
+	}
+}
+
+// TestRunCommandStreaming_NonWebFetchNotKilled proves the watchdog is WebFetch-
+// specific: a non-WebFetch tool call that runs longer than the stall timeout must
+// NOT be killed, so ordinary long-running tools (e.g. Bash builds) are unaffected.
+func TestRunCommandStreaming_NonWebFetchNotKilled(t *testing.T) {
+	original := os.Getenv("AGENT_EXEC_USER")
+	defer func() { _ = os.Setenv("AGENT_EXEC_USER", original) }()
+	_ = os.Unsetenv("AGENT_EXEC_USER")
+	t.Setenv("NAIRI_WEBFETCH_STALL_MS", "1000")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	bash := `{"type":"tool_use","name":"Bash","input":{"command":"sleep"}}`
+	cmd := BuildAgentCommandWithContext(ctx, "sh", "-c",
+		"printf '%s\\n' '"+bash+"'; sleep 3; printf 'done\\n'")
+
+	out, err := RunCommandStreaming(ctx, cmd, nil)
+	if err != nil {
+		t.Fatalf("non-WebFetch tool should not be killed by the watchdog, got error: %v", err)
+	}
+	if !strings.Contains(out, "done") {
+		t.Errorf("expected output to contain 'done', got: %q", out)
+	}
+}
+
+// TestRunCommandStreaming_WebFetchDisarmedByOutput ensures a WebFetch that keeps
+// producing output (or completes) before the stall window is not killed.
+func TestRunCommandStreaming_WebFetchDisarmedByOutput(t *testing.T) {
+	t.Setenv("NAIRI_WEBFETCH_STALL_MS", "1000")
+
+	webfetch := `{"type":"tool_use","name":"WebFetch","input":{"url":"https://example.com"}}`
+	result := `{"type":"result","is_error":false}`
+	cmd := exec.CommandContext(context.Background(), "sh", "-c",
+		"printf '%s\\n' '"+webfetch+"'; printf '%s\\n' '"+result+"'")
+
+	out, err := RunCommandStreaming(context.Background(), cmd, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "result") {
+		t.Errorf("expected output to contain result line, got: %q", out)
+	}
+}

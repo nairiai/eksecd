@@ -22,20 +22,30 @@ const WaitDelayAfterKill = 10 * time.Second
 // honours the NAIRI_MAX_SESSION_MS env var override.
 const DefaultSessionTimeout = 1 * time.Hour
 
+// DefaultWebFetchStallTimeout is the fallback maximum time a single Claude Code
+// WebFetch tool call may run without producing any further stream output before
+// nairid kills the (hung) agent process. Claude Code has no built-in WebFetch
+// timeout — a hung fetch stalls the whole turn indefinitely until the much
+// larger SessionTimeout fires (see anthropics/claude-code#34565, closed as "not
+// planned") — so nairid enforces one here. Prefer WebFetchStallTimeout() at
+// runtime, which honours the NAIRI_WEBFETCH_STALL_MS env var override.
+const DefaultWebFetchStallTimeout = 60 * time.Second
+
 // BlockedEnvVars lists environment variables that should never be passed to agent processes.
 // These contain sensitive credentials or nairid-internal config that agents should not see.
 var BlockedEnvVars = map[string]bool{
-	"NAIRI_API_KEY":        true,
-	"NAIRI_WS_API_URL":     true,
-	"NAIRI_MAX_SESSION_MS": true, // nairid-only config (CLI session timeout)
-	"EKSEC_API_KEY":        true, // Legacy env var
-	"EKSEC_WS_API_URL":     true, // Legacy env var
-	"EKSEC_MAX_SESSION_MS": true, // Legacy env var
-	"CCAGENT_API_KEY":      true, // Legacy env var
-	"CCAGENT_WS_API_URL":   true, // Legacy env var
-	"AGENT_EXEC_USER":      true,
-	"AGENT_HTTP_PROXY":     true, // This is for nairid to read, not for agents
-	"AGENT_MCP_PROXY":      true, // This is for nairid to read, not for agents
+	"NAIRI_API_KEY":           true,
+	"NAIRI_WS_API_URL":        true,
+	"NAIRI_MAX_SESSION_MS":    true, // nairid-only config (CLI session timeout)
+	"NAIRI_WEBFETCH_STALL_MS": true, // nairid-only config (WebFetch stall watchdog)
+	"EKSEC_API_KEY":           true, // Legacy env var
+	"EKSEC_WS_API_URL":        true, // Legacy env var
+	"EKSEC_MAX_SESSION_MS":    true, // Legacy env var
+	"CCAGENT_API_KEY":         true, // Legacy env var
+	"CCAGENT_WS_API_URL":      true, // Legacy env var
+	"AGENT_EXEC_USER":         true,
+	"AGENT_HTTP_PROXY":        true, // This is for nairid to read, not for agents
+	"AGENT_MCP_PROXY":         true, // This is for nairid to read, not for agents
 }
 
 // SessionTimeout returns the per-CLI-session timeout used to bound a single
@@ -64,6 +74,32 @@ func SessionTimeout() time.Duration {
 	if err != nil || ms <= 0 {
 		log.Printf("[SessionTimeout] invalid %s=%q, falling back to default %s", source, raw, DefaultSessionTimeout)
 		return DefaultSessionTimeout
+	}
+
+	return time.Duration(ms) * time.Millisecond
+}
+
+// WebFetchStallTimeout returns the maximum time a single Claude Code WebFetch
+// tool call may run without emitting any further stream output before nairid
+// treats the agent process as hung and kills it. This bounds the "hung WebFetch"
+// failure mode that Claude Code itself does not guard against.
+//
+// Resolution order:
+//  1. NAIRI_WEBFETCH_STALL_MS — integer number of milliseconds (>= 0)
+//  2. DefaultWebFetchStallTimeout (60s) when unset or invalid
+//
+// A value of 0 disables the watchdog entirely. The value is read on every call
+// so a deployment can pick up changes by restarting the daemon.
+func WebFetchStallTimeout() time.Duration {
+	raw := os.Getenv("NAIRI_WEBFETCH_STALL_MS")
+	if raw == "" {
+		return DefaultWebFetchStallTimeout
+	}
+
+	ms, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || ms < 0 {
+		log.Printf("[WebFetchStallTimeout] invalid NAIRI_WEBFETCH_STALL_MS=%q, falling back to default %s", raw, DefaultWebFetchStallTimeout)
+		return DefaultWebFetchStallTimeout
 	}
 
 	return time.Duration(ms) * time.Millisecond
