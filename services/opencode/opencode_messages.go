@@ -307,7 +307,15 @@ func ExtractOpenCodeResult(messages []OpenCodeMessage) (string, error) {
 		return "Completed: " + strings.Join(toolSummaries, "; "), nil
 	}
 
-	return "", fmt.Errorf("no text message found")
+	// The step finished with neither text nor any tool work — an empty turn.
+	// This happens when the model exhausts its output budget on reasoning and is
+	// truncated before emitting an answer (step_finish reason "length"), or when
+	// the provider returns a completely empty/aborted response (reason "unknown",
+	// zero tokens). Treat it as a valid-but-empty result rather than a hard error:
+	// returning an empty output lets the job complete and flow into the backend's
+	// existing "(agent sent empty response)" fallback, instead of silently dropping
+	// the user's message on the error path.
+	return "", nil
 }
 
 // extractToolSummary generates a human-readable summary from a tool use message

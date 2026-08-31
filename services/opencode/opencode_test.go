@@ -61,11 +61,16 @@ func TestOpenCodeService_StartNewConversation(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name:        "no text message in response",
-			prompt:      "Hello",
-			mockOutput:  `{"type":"step_start","timestamp":1759406013703,"sessionID":"ses_456","part":{}}`,
-			mockError:   nil,
-			expectError: true,
+			// Empty turn (no text, no tool work) is not a hard error — it returns an
+			// empty output so the job completes and the backend's empty-response
+			// fallback takes over instead of the message being dropped.
+			name:            "no text message in response",
+			prompt:          "Hello",
+			mockOutput:      `{"type":"step_start","timestamp":1759406013703,"sessionID":"ses_456","part":{}}`,
+			mockError:       nil,
+			expectError:     false,
+			expectedOutput:  "",
+			expectedSession: "ses_456",
 		},
 		{
 			name:   "empty prompt",
@@ -607,4 +612,3 @@ func TestOpenCodeService_AgentName(t *testing.T) {
 		t.Errorf("Expected agent name %q, got %q", expectedName, agentName)
 	}
 }
-

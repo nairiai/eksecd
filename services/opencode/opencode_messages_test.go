@@ -7,11 +7,11 @@ import (
 
 func TestMapOpenCodeOutputToMessages(t *testing.T) {
 	tests := []struct {
-		name           string
-		input          string
-		expectedCount  int
-		expectedTypes  []string
-		expectError    bool
+		name          string
+		input         string
+		expectedCount int
+		expectedTypes []string
+		expectError   bool
 	}{
 		{
 			name: "successful parsing of complete response",
@@ -229,25 +229,27 @@ func TestExtractOpenCodeResult(t *testing.T) {
 			expectError:    false,
 		},
 		{
-			name:           "returns error when no text messages",
+			// Empty turn: model emitted no text and did no tool work (e.g. step_finish
+			// reason "length" after burning the output budget on reasoning, or reason
+			// "unknown" with zero tokens). This must NOT be a hard error — it returns an
+			// empty result so the job completes and the backend's empty-response fallback
+			// takes over instead of the message being silently dropped on the error path.
+			name:           "returns empty result when no text messages",
 			input:          `{"type":"step_start","timestamp":1759406013703,"sessionID":"ses_123","part":{}}`,
 			expectedResult: "",
-			expectError:    true,
-			errorContains:  "no text message found",
+			expectError:    false,
 		},
 		{
-			name:           "returns error for empty input",
+			name:           "returns empty result for empty input",
 			input:          "",
 			expectedResult: "",
-			expectError:    true,
-			errorContains:  "no text message found",
+			expectError:    false,
 		},
 		{
-			name:           "ignores text message with empty text",
+			name:           "returns empty result for text message with empty text",
 			input:          `{"type":"text","timestamp":1759406015783,"sessionID":"ses_123","part":{"type":"text","text":""}}`,
 			expectedResult: "",
-			expectError:    true,
-			errorContains:  "no text message found",
+			expectError:    false,
 		},
 		{
 			name: "returns opencode error for raw error output",
@@ -529,32 +531,33 @@ func TestExtractOpenCodeResult_ToolUseFallback(t *testing.T) {
 			name: "ignores read tool (not an action)",
 			input: `{"type":"tool_use","timestamp":1767690268885,"sessionID":"ses_123","part":{"tool":"read","state":{"status":"completed","title":"README.md"}}}
 {"type":"step_finish","timestamp":1767690269077,"sessionID":"ses_123","part":{}}`,
+			// Read is not an actionable tool, so there is no summary to fall back to.
+			// The turn is effectively empty → empty result, not an error.
 			expectedResult: "",
-			expectError:    true,
-			errorContains:  "no text message found",
+			expectError:    false,
 		},
 		{
-			name: "ignores incomplete tool operations",
+			name:  "ignores incomplete tool operations",
 			input: `{"type":"tool_use","timestamp":1767690438167,"sessionID":"ses_123","part":{"tool":"edit","state":{"status":"pending","title":"README.md"}}}`,
+			// No completed tool work and no text → empty result, not an error.
 			expectedResult: "",
-			expectError:    true,
-			errorContains:  "no text message found",
+			expectError:    false,
 		},
 		{
-			name: "handles edit without diff stats",
-			input: `{"type":"tool_use","timestamp":1767690438167,"sessionID":"ses_123","part":{"tool":"edit","state":{"status":"completed","title":"config.yaml"}}}`,
+			name:           "handles edit without diff stats",
+			input:          `{"type":"tool_use","timestamp":1767690438167,"sessionID":"ses_123","part":{"tool":"edit","state":{"status":"completed","title":"config.yaml"}}}`,
 			expectedResult: "Completed: edited config.yaml",
 			expectError:    false,
 		},
 		{
-			name: "handles write tool",
-			input: `{"type":"tool_use","timestamp":1767690438167,"sessionID":"ses_123","part":{"tool":"write","state":{"status":"completed","title":"newfile.txt"}}}`,
+			name:           "handles write tool",
+			input:          `{"type":"tool_use","timestamp":1767690438167,"sessionID":"ses_123","part":{"tool":"write","state":{"status":"completed","title":"newfile.txt"}}}`,
 			expectedResult: "Completed: created newfile.txt",
 			expectError:    false,
 		},
 		{
-			name: "handles bash tool",
-			input: `{"type":"tool_use","timestamp":1767690438167,"sessionID":"ses_123","part":{"tool":"bash","state":{"status":"completed"}}}`,
+			name:           "handles bash tool",
+			input:          `{"type":"tool_use","timestamp":1767690438167,"sessionID":"ses_123","part":{"tool":"bash","state":{"status":"completed"}}}`,
 			expectedResult: "Completed: ran command",
 			expectError:    false,
 		},
