@@ -1,3 +1,12 @@
+## [v0.0.116] - 2026-09-06
+
+### Bugfixes
+
+- Treat empty OpenCode agent turns as an empty result instead of a hard error ([#218](https://github.com/nairiai/nairid/pull/218))
+  - When an OpenCode session finished a turn without emitting a text message, result extraction returned `no text message found`, which nairid surfaced as `failed to extract OpenCode result` and failed the whole session start. Legitimate empty turns (e.g. a turn that only ran tools, or produced no final assistant text) were treated as fatal
+  - `extractResult` now treats a turn with no text message as a valid empty result rather than erroring, so the session completes normally instead of aborting
+  - Updated unit tests to cover the empty-turn path
+
 ## [v0.0.115] - 2026-07-01
 
 ### Security
